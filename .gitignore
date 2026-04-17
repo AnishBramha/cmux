@@ -1,0 +1,12 @@
+build
+target
+*.out
+*.exe
+*.txt
+*.i
+*.s
+*.d
+.DS_Store
+
+
+
