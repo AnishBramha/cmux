@@ -1,11 +1,23 @@
 build
 target
+bin
 *.out
 *.exe
 *.txt
 *.i
 *.s
 *.d
+*.aux
+*.nav
+*.snm
+*.toc
+*.vrb
+*.xdv
+*.fls
+*.fdb_latexmk
+*.dat
+*.bin
+*.log
 .DS_Store
 
 

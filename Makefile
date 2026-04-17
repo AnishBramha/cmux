@@ -1,7 +1,7 @@
 CC = cc
 
 CFLAGS = -std=c99 -I. -Iinclude -Istd -Wall -Wextra -Wpedantic -Werror -Wno-sign-compare -MMD
-LDFLAGS = -lm -lpthread
+LDFLAGS = -lm -lpthread -lncurses
 
 TARGET = target/cmux.out
 BUILD_DIR = build

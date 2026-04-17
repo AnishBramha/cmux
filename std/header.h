@@ -2,8 +2,7 @@
 
 #include <stddef.h>
 
-#define STD_ARRAY_INIT_CAPACITY 256
-#define STD_ARRAY_MAX 1024
+#define STD_ARRAY_INIT_CAPACITY 64
 
 typedef struct {
 

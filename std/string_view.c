@@ -1,7 +1,7 @@
 #include "string_view.h"
 
 
-string_view sv_from_c_str(const char* c_str) {
+string_view sv_from_c_str(char* c_str) {
 
     return (string_view) {
 
