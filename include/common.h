@@ -22,8 +22,26 @@
 
 #define loop for (;;)
 
+#define unused(var) (void)(var)
+
+#define unreachable()                                                                                            \
+                                                                                                                 \
+    do {                                                                                                         \
+                                                                                                                 \
+        fprintf(stderr, "PANIC: Unreachable statement on line `%d` reached in file `%s`\n", __LINE__, __FILE__); \
+        abort();                                                                                                 \
+                                                                                                                 \
+    } while (0);
 
 
+#define todo(task)                                                                                        \
+                                                                                                          \
+    do {                                                                                                  \
+                                                                                                          \
+        fprintf(stderr, "TODO: Pending task `%s` on line `%d` in file `%s`\n", task, __LINE__, __FILE__); \
+        abort();                                                                                          \
+                                                                                                          \
+    } while (0);
 
 
 

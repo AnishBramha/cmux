@@ -17,16 +17,16 @@ int main(void) {
 
         if (!strncmp(password.str, __PASSWORD_ADMIN__, password.len)) {
 
-            // TODO: Handle admin
+            todo("Handle Admin");
 
         } else {
 
-            // TODO: Handle illegal admin entry
+            todo("Handle Illegal Admin Entry");
         }
 
     } else {
 
-        // TODO: Handle client entry
+        todo("Handle client entry");
     }
 
     return 0;
