@@ -22,6 +22,8 @@ ActiveFile* shared_files = NULL;
 
 void run_server_daemon(void) {
 
+    signal(SIGPIPE, SIG_IGN);
+
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == -1) {
         panic("SERVER: Failed to open file descriptor");
@@ -198,11 +200,109 @@ void handle_client_connection(int client_fd) {
             DirResponse dres = {.type = PKT_DIR_RES, .nnodes = 0};
             scan_directory(path, &dres, 0);
 
-            send(client_fd, &dres, sizeof dres, 0);
+            size_t total_sent = 0;
+            char* ptr =  (char*)&dres;
+
+            while (total_sent < sizeof dres) {
+
+                ssize_t s = send(client_fd, ptr + total_sent, sizeof dres - total_sent, 0);
+
+                if (s <= 0)
+                    break;
+
+                total_sent += s;
+            }
+
             printf("SERVER: Sent %d directory nodes to client `%s`\n", dres.nnodes, lreq.username);
         }
 
-        todo(CRASH, "Implement editor");
+        loop {
+            PacketType type;
+            if (recv(client_fd, &type, sizeof(PacketType), MSG_PEEK) <= 0) {
+                break; // Socket closed safely
+            }
+
+            if (type == PKT_FOPEN_REQ) {
+
+                FOpenRequest freq;
+
+                if (recv(client_fd, &freq, sizeof freq, MSG_WAITALL) <= 0)
+                    break;
+
+                printf("SERVER: File open request `%s` from client `%s`\n", freq.path, lreq.username);
+
+                char path[__FILENAME_LEN_MAX__];
+                sprintf(path, "data/remote/%s/%s", lreq.username, freq.path);
+
+                FOpenResponse fres;
+                memset(&fres, 0, sizeof(fres)); 
+                fres.type = PKT_FOPEN_RES;
+                fres.success = false;
+                fres.nlines = 0;
+
+                int fd = open(path, O_RDONLY);
+                
+                if (fd == -1)
+
+                    fprintf(stderr, "SERVER: Failed to open `%s` | REASON: %s\n", path, strerror(errno));
+
+                else {
+
+                    fres.success = true;
+
+                    char buffer[__PACKET_LEN_MAX__];
+                    ssize_t bytes;
+                    int col = 0;
+
+                    while ((bytes = read(fd, buffer, sizeof buffer)) > 0) {
+
+                        forrange(ssize_t, i, 0, bytes, 1) {
+
+                            char c = buffer[i];
+
+                            if (c == '\n') {
+
+                                fres.lines[fres.nlines][col] = NIL;
+                                fres.nlines++;
+                                col = 0;
+
+                                if (fres.nlines >= __FILE_LINES_MAX__)
+                                    goto done2;
+
+                            } else {
+
+                                if (col < __PACKET_LEN_MAX__ - 1)
+                                    fres.lines[fres.nlines][col++] = c;
+                            }
+                        }
+                    }
+
+                    if (col > 0 && fres.nlines < __FILE_LINES_MAX__)
+                        fres.lines[fres.nlines++][col] = NIL;
+
+                done2:
+                    close(fd);
+                }
+
+                size_t total_sent = 0;
+                char* ptr = (char*)&fres;
+
+                while (total_sent < sizeof(fres)) {
+
+                    ssize_t s = send(client_fd, ptr + total_sent, sizeof(fres) - total_sent, 0);
+
+                    if (s <= 0)
+                        break;
+
+                    total_sent += s;
+                }
+
+            } else {
+
+                char trash;
+                recv(client_fd, &trash, 1, 0);
+            }
+        }
 
     } else
         fprintf(stderr, "SERVER: Authentication failed for client `%s`\n", lreq.username);

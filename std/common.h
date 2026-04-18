@@ -32,10 +32,10 @@
 #define __PORT__ 8000
 #define __IP_LOCAL__ "127.0.0.1"
 #define __BACKLOG__ 64
-#define __PACKET_LEN_MAX__ 1024
+#define __PACKET_LEN_MAX__ 256
 
 #define __OPEN_FILES_MAX__ 64
-#define __FILE_LINES_MAX__ 1024
+#define __FILE_LINES_MAX__ 256
 
 #define __USERS_DB__ "data/users.dat"
 

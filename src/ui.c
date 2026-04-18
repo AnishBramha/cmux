@@ -1,5 +1,6 @@
 #include "auth.h"
 #include "common.h"
+#include <fenv.h>
 #include "ui.h"
 
 #define CTRL(key) ((key) & 0x1F)
@@ -70,7 +71,7 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
     }
 
     DirResponse dres;
-    if (recv(server_fd, &dres, sizeof dres, 0) <= 0) {
+    if (recv(server_fd, &dres, sizeof dres, MSG_WAITALL) <= 0) {
         panic("CLIENT [%d]: Directory response dropped", pid);
     }
 
@@ -115,16 +116,37 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
 
             if (getmouse(&event) == OK) {
 
-                if (event.x >= dired_width) {
+                if (event.x < dired_width) {
 
-                    mvwprintw(win_editor, 2, 2, "Mouse clicked at Editor Y: %d, X: %d  ", 
-                              event.y, event.x - dired_width);
-                    wrefresh(win_editor);
+                    int clicked_idx = event.y - 2;
 
-                } else {
+                    if (clicked_idx >= 0 && clicked_idx < dres.nnodes) {
 
-                    mvwprintw(win_dired, term_y - 2, 2, "Clicked tree row: %d", event.y);
-                    wrefresh(win_dired);
+                        if (dres.nodes[clicked_idx].type == NODE_FILE) {
+
+                            FOpenRequest freq = {.type = PKT_FOPEN_REQ};
+                            strncpy(freq.path, dres.nodes[clicked_idx].name, __FILENAME_LEN_MAX__);
+                            send(server_fd, &freq, sizeof freq, 0);
+
+                            FOpenResponse fres;
+                            if (recv(server_fd, &fres, sizeof fres, MSG_WAITALL) <= 0)
+                                break;
+
+                            wclear(win_editor);
+                            box(win_editor, 0, 0);
+                            mvwprintw(win_editor, 0, 2, "Editor [%s]", freq.path);
+
+                            if (fres.success) {
+
+                                forrange(size_t, l, 0, fres.nlines, 1)
+                                    mvwprintw(win_editor, l + 2, 2, "%4zu | %s", l + 1, fres.lines[l]);
+
+                            } else
+                                mvwprintw(win_editor, 2, 2, "Failed to open file");
+
+                            wrefresh(win_editor);
+                        }
+                    }
                 }
             }
         }

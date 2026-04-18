@@ -110,6 +110,16 @@ typedef struct {
 typedef struct {
 
     PacketType type;
+    bool success;
+    size_t nlines;
+    char lines[__FILE_LINES_MAX__][__PACKET_LEN_MAX__];
+
+} FOpenResponse;
+
+
+typedef struct {
+
+    PacketType type;
     char path[__FILENAME_LEN_MAX__];
     int line;
     int col;
