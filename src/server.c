@@ -3,12 +3,18 @@
 #include "auth.h"
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/mman.h>
 
 
-static char* strrole(Role role) {
+static inline char* strrole(Role role) {
 
     return role == ADMIN ? "ADMIN" : "CLIENT";
 }
+
+
+size_t* nusers = NULL;
+Record* users = NULL;
 
 
 void run_server_daemon(void) {
@@ -46,6 +52,8 @@ void run_server_daemon(void) {
     };
     sigemptyset(&zombie_reaper.sa_mask);
     sigaction(SIGCHLD, &zombie_reaper, NULL);
+
+    load_users_db();
 
     loop {
 
@@ -126,17 +134,69 @@ void handle_client_connection(int client_fd) {
 
     } else {
 
-        todo(DEBUG, "Implement client login");
+        forrange(size_t, i, 0, *nusers, 1) {
+
+            if (!strncmp(lreq.username, users[i].username, __USERNAME_LEN_MAX__)) {
+
+                if (!strncmp(lreq.password, users[i].password, __PASSWORD_LEN_MAX__))
+                    lres.success = true;
+
+                else
+                    sprintf(lres.msg, "Invalid password for user `%s`", users[i].username);
+
+                goto done;
+            }
+        }
+
+        strcpy(lres.msg, "Username not found");
     }
 
-    send(client_fd, &lres, sizeof lres, 0);
+    done:
+        send(client_fd, &lres, sizeof lres, 0);
 
     if (lres.success) {
 
-        printf("SERVER: Client authentication finished with role `%s`\n", strrole(lres.role));
+        printf("SERVER: Client authentication for `%s` finished with role `%s`\n", lreq.username, strrole(lres.role));
 
         todo(CRASH, "Implement start editor");
+
+    } else
+        fprintf(stderr, "SERVER: Authentication failed for client `%s`\n", lreq.username);
+}
+
+
+void load_users_db(void) {
+
+    size_t memsize = sizeof(size_t) + sizeof(Record) * __USERS_MAX__;
+    void* mem = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
+
+    if (mem == MAP_FAILED) {
+        panic("SERVER: Failed to load shared memory for user database");
     }
+
+    nusers = (size_t*)mem;
+    *nusers = 0;
+    users = (Record*)((char*)mem + sizeof(size_t));
+
+    int fd = open(__USERS_DB__, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    if (fd == -1) {
+        panic("SERVER: Failed to load user database");
+    }
+
+    ssize_t bytes = read(fd, users, sizeof(Record) * __USERS_MAX__);
+    if (bytes > 0) {
+
+        *nusers = bytes / sizeof(Record);
+        printf("SERVER: Loaded %zu users from database\n", *nusers);
+
+    } else if (!bytes)
+        puts("SERVER: No users found in database");
+
+    else {
+        panic("SERVER: Read failed on users database\n");
+    }
+
+    close(fd);
 }
 
 

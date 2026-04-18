@@ -2,6 +2,7 @@
 
 #include "common.h"
 
+#define __USERS_MAX__        256
 
 #define __USERNAME_ADMIN__   "admin"
 #define __PASSWORD_ADMIN__   "12345"

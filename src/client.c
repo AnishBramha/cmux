@@ -3,13 +3,13 @@
 #include "auth.h"
 
 
-static char* strrole(Role role) {
+static inline char* strrole(Role role) {
 
     return role == ADMIN ? "ADMIN" : "CLIENT";
 }
 
 
-void run_client_editor(string_view *username, string_view *password) {
+void run_client_handler(string_view *username, string_view *password) {
 
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (sock_fd < 0) {
@@ -52,7 +52,7 @@ void run_client_editor(string_view *username, string_view *password) {
     if (lres.success) {
 
         printf("CLIENT [%d]: Logged in with role `%s`\n", getpid(), strrole(lres.role));
-        todo(CRASH, "Implement editor UI");
+        todo(CRASH, "Implement editor");
 
     } else {
 

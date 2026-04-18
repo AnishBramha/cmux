@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
     string_view password = {.str = (char[__PASSWORD_LEN_MAX__]){NIL}, .len = 0};
 
     show_login_screen(&username, &password);
-    run_client_editor(&username, &password);
+    run_client_handler(&username, &password);
 
     return 0;
 }

@@ -1,4 +1,3 @@
-#include "common.h"
 #include "auth.h"
 
 void show_login_screen(string_view* username, string_view* password) {

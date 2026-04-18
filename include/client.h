@@ -3,7 +3,7 @@
 #include "common.h"
 
 
-void run_client_editor(string_view* username, string_view* password);
+void run_client_handler(string_view* username, string_view* password);
 
 
 

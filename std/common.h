@@ -26,13 +26,15 @@
 #define loop for (;;)
 
 #define forrange(type, idx, start, end, step) \
-    for (type idx = start; idx < end; idx += step)
+    for (type idx = (start); idx < (end); idx += (step))
 
 
 #define __PORT__ 8000
 #define __IP_LOCAL__ "127.0.0.1"
 #define __BACKLOG__ 64
 #define __PACKET_LEN_MAX__ 1024
+
+#define __USERS_DB__ "data/users.dat"
 
 #define unused(var) (void)(var)
 
