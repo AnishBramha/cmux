@@ -1,12 +1,11 @@
 #include "client.h"
 #include "common.h"
+#include "auth.h"
 
 
-void handle_client_connection(int client_fd) {
+static char* strrole(Role role) {
 
-    char buf[__PACKET_LEN_MAX__];
-    while (recv(client_fd, buf, sizeof buf, 0) > 0)
-        todo("CLIENT: Implement login and editor\n");
+    return role == ADMIN ? "ADMIN" : "CLIENT";
 }
 
 
@@ -35,7 +34,32 @@ void run_client_editor(string_view *username, string_view *password) {
 
     printf("CLIENT [%d]: Connected to server at INET %s | PORT %d\n", getpid(),  __IP_LOCAL__, __PORT__);
     printf("CLIENT [%d]: Authenticating login for\nUsername: "sv_fmt"\nPassword: "sv_fmt"\n", getpid(), sv_arg(*username), sv_arg(*password));
-    todo("Authenticate and login client");
+
+    LoginRequest lreq = {.type = PKT_LOGIN_REQ};
+    strncpy(lreq.username, username->str, username->len);
+    strncpy(lreq.password, password->str, password->len);
+
+    printf("CLIENT [%d]: Sending login request\n", getpid());
+    if (send(sock_fd, &lreq, sizeof lreq, 0) < 0) {
+        panic("CLIENT [%d]: Failed to send login request\n", getpid());
+    }
+
+    LoginResponse lres;
+    if (recv(sock_fd, &lres, sizeof lres, 0) <= 0) {
+        panic("CLIENT [%d]: Login response dropped", getpid());
+    }
+
+    if (lres.success) {
+
+        printf("CLIENT [%d]: Logged in with role `%s`\n", getpid(), strrole(lres.role));
+        todo(CRASH, "Implement editor UI");
+
+    } else {
+
+        fprintf(stderr, "PANIC: CLIENT [%d]: Login failed | REASON: %s\n", getpid(), lres.msg);
+        close(sock_fd);
+        exit(EXIT_FAILURE);
+    }
 }
 
 

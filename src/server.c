@@ -1,8 +1,14 @@
 #include "server.h"
-#include "client.h"
 #include "common.h"
+#include "auth.h"
 #include <signal.h>
 #include <stdio.h>
+
+
+static char* strrole(Role role) {
+
+    return role == ADMIN ? "ADMIN" : "CLIENT";
+}
 
 
 void run_server_daemon(void) {
@@ -90,7 +96,48 @@ void reap_zombie(int sig) {
 }
 
 
+void handle_client_connection(int client_fd) {
 
+    LoginRequest lreq;
+    if (recv(client_fd, &lreq, sizeof lreq, 0) <= 0) {
+
+        fputs("SERVER: Client did not send login details\n", stderr);
+        return;
+    }
+
+    if (lreq.type != PKT_LOGIN_REQ) {
+
+        fputs("SERVER: Expected login request, but got garbage\n", stderr);
+        return;
+    }
+
+    LoginResponse lres = {.type = PKT_LOGIN_RES, .role = CLIENT, .success = false};
+    
+    if (!strncmp(lreq.username, __USERNAME_ADMIN__, __USERNAME_LEN_MAX__)) {
+        
+        if (!strncmp(lreq.password, __PASSWORD_ADMIN__, __PASSWORD_LEN_MAX__)) {
+
+            lres.success = true;
+            lres.role = ADMIN;
+            strcpy(lres.msg, "Admin access granted");
+
+        } else
+            strcpy(lres.msg, "Illegal admin password");
+
+    } else {
+
+        todo(DEBUG, "Implement client login");
+    }
+
+    send(client_fd, &lres, sizeof lres, 0);
+
+    if (lres.success) {
+
+        printf("SERVER: Client authentication finished with role `%s`\n", strrole(lres.role));
+
+        todo(CRASH, "Implement start editor");
+    }
+}
 
 
 

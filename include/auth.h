@@ -30,5 +30,34 @@ typedef struct {
 } Record;
 
 
+typedef enum {
+
+    PKT_LOGIN_REQ,
+    PKT_LOGIN_RES,
+
+} PacketType;
+
+
+typedef struct {
+
+    PacketType type;
+    char username[__USERNAME_LEN_MAX__];
+    char password[__PASSWORD_LEN_MAX__];
+
+} LoginRequest;
+
+
+typedef struct {
+
+    PacketType type;
+    bool success;
+    Role role;
+    char msg[__ERRMSG_LEN_MAX__];
+
+} LoginResponse;
+
+
+
+
 
 

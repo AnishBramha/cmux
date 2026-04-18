@@ -47,13 +47,22 @@
     } while (0);
 
 
-#define todo(task, ...)                                                                                        \
-                                                                                                          \
-    do {                                                                                                  \
-                                                                                                          \
-        fprintf(stderr, "TODO: Pending task `%s` on line `%d` in file `%s`\n", task, __LINE__, __FILE__); \
-        abort();                                                                                          \
-                                                                                                          \
+typedef enum {
+
+    DEBUG,
+    CRASH,
+
+} PendingResponse;
+
+#define todo(response, task, ...)                                                                                   \
+                                                                                                                    \
+    do {                                                                                                            \
+                                                                                                                    \
+        fprintf(stderr, "TODO: Pending task `%s` on line `%d` in file `%s`\n", task, __LINE__, __FILE__);           \
+                                                                                                                    \
+        if (response == CRASH)                                                                                      \
+            abort();                                                                                                \
+                                                                                                                    \
     } while (0);
 
 
