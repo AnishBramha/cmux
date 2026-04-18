@@ -1,6 +1,6 @@
 CC = cc
 
-CFLAGS = -std=c99 -I. -Iinclude -Istd -Wall -Wextra -Wpedantic -Werror -Wno-sign-compare -MMD
+CFLAGS = -std=c23 -I. -Iinclude -Istd -Wall -Wextra -Wpedantic -Werror -Wno-sign-compare -MMD -Wno-gnu-zero-variadic-macro-arguments
 LDFLAGS = -lm -lpthread -lncurses
 
 TARGET = target/cmux.out
@@ -52,6 +52,9 @@ $(BUILD_DIR)/%.o: ./%.c
 
 run:
 	@./$(TARGET)
+
+launch:
+	@./$(TARGET) --launch
 
 
 clean:
