@@ -18,9 +18,20 @@ int main(int argc, char** argv) {
 
     string_view username = {.str = (char[__USERNAME_LEN_MAX__]){NIL}, .len = 0};
     string_view password = {.str = (char[__PASSWORD_LEN_MAX__]){NIL}, .len = 0};
+    char errmsg[__ERRMSG_LEN_MAX__] = {NIL};
 
-    show_login_screen(&username, &password);
-    run_client_handler(&username, &password);
+    loop {
+
+        show_login_screen(&username, &password, errmsg);
+
+        int server_sock_fd = run_client_handler(&username, &password, errmsg);
+        if (server_sock_fd != -1)
+            break;
+
+        usleep(1000);
+    }
+
+    todo(CRASH, "Implement file picker");
 
     return 0;
 }

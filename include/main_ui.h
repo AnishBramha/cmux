@@ -2,7 +2,7 @@
 
 #include "common.h"
 
-void show_login_screen(string_view* username, string_view* password);
+void show_login_screen(string_view* username, string_view* password, const char* errmsg);
 
 
 

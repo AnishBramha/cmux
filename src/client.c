@@ -9,7 +9,7 @@ static inline char* strrole(Role role) {
 }
 
 
-void run_client_handler(string_view *username, string_view *password) {
+int run_client_handler(string_view *username, string_view *password, char* errmsg) {
 
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (sock_fd < 0) {
@@ -52,13 +52,15 @@ void run_client_handler(string_view *username, string_view *password) {
     if (lres.success) {
 
         printf("CLIENT [%d]: Logged in with role `%s`\n", getpid(), strrole(lres.role));
-        todo(CRASH, "Implement editor");
+        return sock_fd;
 
     } else {
 
         fprintf(stderr, "PANIC: CLIENT [%d]: Login failed | REASON: %s\n", getpid(), lres.msg);
+        strcpy(errmsg, lres.msg);
         close(sock_fd);
-        exit(EXIT_FAILURE);
+
+        return -1;
     }
 }
 
