@@ -34,6 +34,9 @@
 #define __BACKLOG__ 64
 #define __PACKET_LEN_MAX__ 1024
 
+#define __OPEN_FILES_MAX__ 64
+#define __FILE_LINES_MAX__ 1024
+
 #define __USERS_DB__ "data/users.dat"
 
 #define unused(var) (void)(var)

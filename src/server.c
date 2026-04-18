@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 
 static inline char* strrole(Role role) {
@@ -15,6 +17,7 @@ static inline char* strrole(Role role) {
 
 size_t* nusers = NULL;
 Record* users = NULL;
+ActiveFile* shared_files = NULL;
 
 
 void run_server_daemon(void) {
@@ -53,7 +56,7 @@ void run_server_daemon(void) {
     sigemptyset(&zombie_reaper.sa_mask);
     sigaction(SIGCHLD, &zombie_reaper, NULL);
 
-    load_users_db();
+    load_shm();
 
     loop {
 
@@ -97,11 +100,36 @@ void run_server_daemon(void) {
 }
 
 
+
+
 void reap_zombie(int sig) {
 
     unused(sig);
     while (waitpid(-1, NULL, WNOHANG) > 0);
 }
+
+
+
+
+static void createdirs(const char* fpath) {
+
+    char path[__FILENAME_LEN_MAX__];
+    strncpy(path, fpath, __FILENAME_LEN_MAX__ - 1);
+
+    for (int i = 0; path[i]; i++) {
+
+        if (path[i] == '/') {
+
+            path[i] = NIL;
+            if (mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
+                panic("SERVER: Failed to create directory `%s`", path);
+
+            path[i] = '/';
+        }
+    }
+}
+
+
 
 
 void handle_client_connection(int client_fd) {
@@ -158,16 +186,37 @@ void handle_client_connection(int client_fd) {
 
         printf("SERVER: Client authentication for `%s` finished with role `%s`\n", lreq.username, strrole(lres.role));
 
-        todo(CRASH, "Implement start editor");
+        char path[__FILENAME_LEN_MAX__];
+        snprintf(path, __FILENAME_LEN_MAX__, "data/remote/%s/", lreq.username);
+        createdirs(path);
+
+        DirRequest dreq;
+        if (recv(client_fd, &dreq, sizeof dreq, 0) > 0 && dreq.type == PKT_DIR_REQ) {
+
+            printf("SERVER: Directory request received from client `%s`\n", lreq.username);
+
+            DirResponse dres = {.type = PKT_DIR_RES, .nnodes = 0};
+            scan_directory(path, &dres, 0);
+
+            send(client_fd, &dres, sizeof dres, 0);
+            printf("SERVER: Sent %d directory nodes to client `%s`\n", dres.nnodes, lreq.username);
+        }
+
+        todo(CRASH, "Implement editor");
 
     } else
         fprintf(stderr, "SERVER: Authentication failed for client `%s`\n", lreq.username);
 }
 
 
-void load_users_db(void) {
 
-    size_t memsize = sizeof(size_t) + sizeof(Record) * __USERS_MAX__;
+
+
+void load_shm(void) {
+
+    size_t usr_memsize = sizeof(size_t) + sizeof(Record) * __USERS_MAX__;
+    size_t files_memsize = sizeof(ActiveFile) * __OPEN_FILES_MAX__;
+    size_t memsize = usr_memsize + files_memsize;
     void* mem = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
 
     if (mem == MAP_FAILED) {
@@ -177,6 +226,10 @@ void load_users_db(void) {
     nusers = (size_t*)mem;
     *nusers = 0;
     users = (Record*)((char*)mem + sizeof(size_t));
+    shared_files = (ActiveFile*)((char*)mem + usr_memsize);
+
+    forrange(int, i, 0, __OPEN_FILES_MAX__, 1)
+        shared_files[i].active = false;
 
     int fd = open(__USERS_DB__, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
     if (fd == -1) {
@@ -197,6 +250,43 @@ void load_users_db(void) {
     }
 
     close(fd);
+}
+
+
+
+void scan_directory(const char* path, DirResponse* dres, int depth) {
+
+    if (dres->nnodes >= __FILES_OWNED_MAX__)
+        return;
+
+    DIR* dir = opendir(path);
+    if (!dir)
+        return;
+
+    struct dirent* dentry;
+    while ((dentry = readdir(dir))) {
+
+        if (!strcmp(dentry->d_name, ".") || !strcmp(dentry->d_name, ".."))
+            continue;
+
+        size_t idx = dres->nnodes++;
+        strncpy(dres->nodes[idx].name, dentry->d_name, __FILENAME_LEN_MAX__);
+        dres->nodes[idx].depth = depth;
+
+        char aug_path[__FILENAME_LEN_MAX__];
+        sprintf(aug_path, "%s/%s", path, dentry->d_name);
+
+        struct stat statbuf;
+        if (!stat(aug_path, &statbuf) && S_ISDIR(statbuf.st_mode)) {
+
+            dres->nodes[idx].type = NODE_DIR;
+            scan_directory(aug_path, dres, depth + 1);
+
+        } else
+            dres->nodes[idx].type = NODE_FILE;
+    }
+
+    closedir(dir);
 }
 
 

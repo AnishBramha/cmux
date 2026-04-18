@@ -9,7 +9,7 @@ static inline char* strrole(Role role) {
 }
 
 
-int run_client_handler(string_view *username, string_view *password, char* errmsg) {
+int run_client_handler(string_view *username, string_view *password, char* errmsg, pid_t* pid) {
 
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (sock_fd < 0) {
@@ -52,6 +52,7 @@ int run_client_handler(string_view *username, string_view *password, char* errms
     if (lres.success) {
 
         printf("CLIENT [%d]: Logged in with role `%s`\n", getpid(), strrole(lres.role));
+        *pid = getpid();
         return sock_fd;
 
     } else {

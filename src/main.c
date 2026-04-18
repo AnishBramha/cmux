@@ -1,5 +1,5 @@
 #include "common.h"
-#include "main_ui.h"
+#include "ui.h"
 #include "auth.h"
 #include "server.h"
 #include "client.h"
@@ -20,20 +20,43 @@ int main(int argc, char** argv) {
     string_view password = {.str = (char[__PASSWORD_LEN_MAX__]){NIL}, .len = 0};
     char errmsg[__ERRMSG_LEN_MAX__] = {NIL};
 
+    int server_sock_fd = -1;
+    pid_t clipid;
+
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    start_color();
+    init_pair(1, COLOR_BLACK, COLOR_WHITE);
+    init_pair(2, COLOR_WHITE, COLOR_RED);
+    init_pair(3, COLOR_RED, COLOR_WHITE);
+
     loop {
+
+        clear();
+        refresh();
 
         show_login_screen(&username, &password, errmsg);
 
-        int server_sock_fd = run_client_handler(&username, &password, errmsg);
+        endwin();
+
+        server_sock_fd = run_client_handler(&username, &password, errmsg, &clipid);
         if (server_sock_fd != -1)
             break;
 
         usleep(1000);
     }
 
-    todo(CRASH, "Implement file picker");
+    clear();
+    refresh();
 
-    return 0;
+    show_dired(server_sock_fd, username.str, clipid);
+
+    endwin();
+    
+    close(server_sock_fd);
+    return EXIT_SUCCESS;
 }
 
 
