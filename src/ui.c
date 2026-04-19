@@ -107,8 +107,40 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
     wrefresh(win_dired);
     wrefresh(win_editor);
 
+    bool in_editor = false;
+    char current_file[__FILENAME_LEN_MAX__] = {NIL};
+    int cursor_y = 0;
+    int cursor_x = 0;
+    int line_offt = 7;
+
+    wtimeout(stdscr, 50);
+
     int c;
     while ((c = getch()) != CTRL('x')) {
+
+        if (c == ERR) {
+
+            if (in_editor) {
+
+                SyncRequest sreq = {.type = PKT_SYNC_REQ};
+                strncpy(sreq.path, current_file, __FILENAME_LEN_MAX__ - 1);
+                send(server_fd, &sreq, sizeof sreq, 0);
+
+                SyncResponse sres;
+                if (recv(server_fd, &sres, sizeof sres, MSG_WAITALL) > 0) {
+
+                    if (sres.success) {
+
+                        forrange(size_t, l, 0, sres.nlines, 1)
+                            mvwprintw(win_editor, l + 2, 2, "%2zu | %-60s", l + 1, sres.lines[l]);
+
+                        wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+                        wrefresh(win_editor);
+                    }
+                }
+            }
+            continue;
+        }
 
         if (c == KEY_MOUSE) {
 
@@ -134,19 +166,86 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
 
                             wclear(win_editor);
                             box(win_editor, 0, 0);
-                            mvwprintw(win_editor, 0, 2, "Editor [%s]", freq.path);
+                            mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x>]", freq.path);
 
                             if (fres.success) {
 
-                                forrange(size_t, l, 0, fres.nlines, 1)
-                                    mvwprintw(win_editor, l + 2, 2, "%4zu | %s", l + 1, fres.lines[l]);
+                                in_editor = true;
+                                strncpy(current_file, freq.path, __FILENAME_LEN_MAX__);
+                                cursor_y = 0;
+                                cursor_x = 0;
 
-                            } else
+                                forrange(size_t, l, 0, fres.nlines, 1)
+                                    mvwprintw(win_editor, l + 2, 2, "%2zu | %s", l + 1, fres.lines[l]);
+
+                                curs_set(1);
+                                wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+
+                            } else {
+                                
                                 mvwprintw(win_editor, 2, 2, "Failed to open file");
+                                in_editor = false;
+                                curs_set(0);
+                            }
 
                             wrefresh(win_editor);
                         }
                     }
+
+                } else if (in_editor) {
+
+                    cursor_y = event.y - 2;
+                    cursor_x = event.x - dired_width - line_offt;
+
+                    if (cursor_y < 0)
+                        cursor_y = 0;
+
+                    if (cursor_x < 0)
+                        cursor_x = 0;
+
+                    if (cursor_x >= __PACKET_LEN_MAX__)
+                        cursor_x = __PACKET_LEN_MAX__ - 1;
+
+                    wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+                    wrefresh(win_editor);
+                }
+            }
+        
+        } else if (in_editor) {
+
+            EditRequest ereq = {
+
+                .type = PKT_EDIT_REQ,
+                .line = cursor_y,
+                .col = cursor_x,
+                .c = c,
+                .del = false,
+            };
+            strncpy(ereq.path, current_file, __FILENAME_LEN_MAX__);
+
+            if (c == KEY_BACKSPACE || c == 127 || c == '\b') {
+
+                if (cursor_x > 0) {
+
+                    ereq.del = true;
+                    cursor_x--;
+                    mvwaddch(win_editor, cursor_y + 2, cursor_x + line_offt, ' ');
+                    wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+                    wrefresh(win_editor);
+
+                    send(server_fd, &ereq, sizeof ereq, 0);
+                }
+
+            } else if (isprint(c)) {
+
+                if (cursor_x < __PACKET_LEN_MAX__ - 1) {
+
+                        mvwaddch(win_editor, cursor_y + 2, cursor_x + line_offt, c);
+                        cursor_x++;
+                        wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+                        wrefresh(win_editor);
+                        
+                        send(server_fd, &ereq, sizeof ereq, 0);
                 }
             }
         }

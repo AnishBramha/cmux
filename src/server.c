@@ -188,28 +188,49 @@ void handle_client_connection(int client_fd) {
 
         printf("SERVER: Client authentication for `%s` finished with role `%s`\n", lreq.username, strrole(lres.role));
 
-        char path[__FILENAME_LEN_MAX__];
-        snprintf(path, __FILENAME_LEN_MAX__, "data/remote/%s/", lreq.username);
-        createdirs(path);
+        createdirs("data/remote/");
 
         DirRequest dreq;
         if (recv(client_fd, &dreq, sizeof dreq, 0) > 0 && dreq.type == PKT_DIR_REQ) {
-
+            
             printf("SERVER: Directory request received from client `%s`\n", lreq.username);
-
             DirResponse dres = {.type = PKT_DIR_RES, .nnodes = 0};
-            scan_directory(path, &dres, 0);
+
+            if (lres.role == ADMIN)
+                scan_directory("data/remote", &dres, 0);
+            
+            else {
+
+                forrange(size_t, i, 0, *nusers, 1) {
+
+                    if (!strcmp(users[i].username, lreq.username)) {
+                        
+                        forrange(int, f, 0, __FILES_OWNED_MAX__, 1) {
+
+                            if (users[i].files[f][0] != NIL) {
+
+                                size_t idx = dres.nnodes++;
+                                strncpy(dres.nodes[idx].name, users[i].files[f], __FILENAME_LEN_MAX__);
+
+                                dres.nodes[idx].type = NODE_FILE;
+                                dres.nodes[idx].depth = 0;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
 
             size_t total_sent = 0;
-            char* ptr =  (char*)&dres;
+            char* ptr = (char*)&dres;
 
-            while (total_sent < sizeof dres) {
+            while (total_sent < sizeof(dres)) {
 
-                ssize_t s = send(client_fd, ptr + total_sent, sizeof dres - total_sent, 0);
+                ssize_t s = send(client_fd, ptr + total_sent, sizeof(dres) - total_sent, 0);
 
                 if (s <= 0)
                     break;
-
+                
                 total_sent += s;
             }
 
@@ -217,85 +238,203 @@ void handle_client_connection(int client_fd) {
         }
 
         loop {
+
             PacketType type;
-            if (recv(client_fd, &type, sizeof(PacketType), MSG_PEEK) <= 0) {
-                break; // Socket closed safely
-            }
+            if (recv(client_fd, &type, sizeof(PacketType), MSG_PEEK) <= 0)
+                break;
 
             if (type == PKT_FOPEN_REQ) {
 
                 FOpenRequest freq;
-
                 if (recv(client_fd, &freq, sizeof freq, MSG_WAITALL) <= 0)
                     break;
 
                 printf("SERVER: File open request `%s` from client `%s`\n", freq.path, lreq.username);
 
-                char path[__FILENAME_LEN_MAX__];
-                sprintf(path, "data/remote/%s/%s", lreq.username, freq.path);
+                ActiveFile* fptr = NULL;
+                forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
 
-                FOpenResponse fres;
-                memset(&fres, 0, sizeof(fres)); 
-                fres.type = PKT_FOPEN_RES;
-                fres.success = false;
-                fres.nlines = 0;
+                    if (shared_files[i].active && !strcmp(shared_files[i].path, freq.path)) {
+                        
+                        fptr = &shared_files[i];
+                        break;
+                    }
+                }
 
-                int fd = open(path, O_RDONLY);
-                
-                if (fd == -1)
+                if (!fptr) {
 
-                    fprintf(stderr, "SERVER: Failed to open `%s` | REASON: %s\n", path, strerror(errno));
+                    forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
 
-                else {
-
-                    fres.success = true;
-
-                    char buffer[__PACKET_LEN_MAX__];
-                    ssize_t bytes;
-                    int col = 0;
-
-                    while ((bytes = read(fd, buffer, sizeof buffer)) > 0) {
-
-                        forrange(ssize_t, i, 0, bytes, 1) {
-
-                            char c = buffer[i];
-
-                            if (c == '\n') {
-
-                                fres.lines[fres.nlines][col] = NIL;
-                                fres.nlines++;
-                                col = 0;
-
-                                if (fres.nlines >= __FILE_LINES_MAX__)
-                                    goto done2;
-
-                            } else {
-
-                                if (col < __PACKET_LEN_MAX__ - 1)
-                                    fres.lines[fres.nlines][col++] = c;
-                            }
+                        if (!shared_files[i].active) {
+                            
+                            fptr = &shared_files[i];
+                            break;
                         }
                     }
 
-                    if (col > 0 && fres.nlines < __FILE_LINES_MAX__)
-                        fres.lines[fres.nlines++][col] = NIL;
+                    if (fptr) {
 
-                done2:
-                    close(fd);
+                        char path[__FILENAME_LEN_MAX__];
+                        sprintf(path, "data/remote/%s", freq.path);
+
+                        int fd = open(path, O_RDONLY);
+                        if (fd == -1) {
+
+                            fprintf(stderr, "SERVER: Failed to open file `%s` by client `%s`\n", path, lreq.username);
+                            fptr = NULL;
+
+                        } else {
+
+                            fptr->active = true;
+                            strncpy(fptr->path, freq.path, __FILENAME_LEN_MAX__);
+                            fptr->nlines = 0;
+
+                            char buffer[__PACKET_LEN_MAX__];
+                            ssize_t bytes;
+                            int col = 0;
+
+                            while ((bytes = read(fd, buffer, sizeof buffer) > 0)) {
+
+                                forrange(ssize_t, i, 0, bytes, 1) {
+
+                                    char c = buffer[i];
+                                    if (c == '\n') {
+
+                                        fptr->lines[fptr->nlines++].text[col] = NIL;
+                                        col = 0;
+                                        
+                                        if (fptr->nlines >= __FILE_LINES_MAX__)
+                                            goto done2;
+
+                                    } else {
+
+                                        if (col < __PACKET_LEN_MAX__ - 1)
+                                            fptr->lines[fptr->nlines].text[col++] = c;
+                                    }
+                                }
+                            }
+
+                            if (col > 0 && fptr->nlines < __FILE_LINES_MAX__)
+                                fptr->lines[fptr->nlines++].text[col] = NIL;
+
+                            done2:
+                                close(fd);
+                        }
+                    }
+                }
+
+                FOpenResponse fres = {
+
+                    .type = PKT_FOPEN_RES,
+                    .success = false,
+                    .nlines = 0,
+                };
+
+                if (fptr) {
+
+                    fres.success = true;
+                    fres.nlines = fptr->nlines;
+                    
+                    forrange(size_t, l, 0, fres.nlines, 1)
+                        strncpy(fres.lines[l], fptr->lines[l].text, __PACKET_LEN_MAX__ - 1);
+
+                    size_t total_sent = 0;
+                    char* ptr = (char*)&fres;
+
+                    while (total_sent < sizeof fres) {
+
+                        ssize_t s = send(client_fd, ptr + total_sent, sizeof fres - total_sent, 0);
+                        
+                        if (s <= 0)
+                            break;
+                            
+                        total_sent += s;
+                    }
+                }
+
+            } else if (type == PKT_EDIT_REQ) {
+
+                EditRequest ereq;
+                if (recv(client_fd, &ereq, sizeof ereq, MSG_WAITALL) <= 0)
+                    break;
+
+                ActiveFile* fptr = NULL;
+                forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
+
+                    if (shared_files[i].active && !strcmp(shared_files[i].path, ereq.path)) {
+
+                        fptr = &shared_files[i];
+                        break;
+                    }
+                }
+
+                if (fptr) {
+
+                    if (0 <= ereq.line  && ereq.line < __FILE_LINES_MAX__ && 0 <= ereq.col && ereq.col < __PACKET_LEN_MAX__ - 1) {
+
+                        if ((size_t)ereq.line >= fptr->nlines)
+                            fptr->nlines = ereq.line + 1;
+
+                        size_t len = strlen(fptr->lines[ereq.line].text);
+
+                        if (ereq.del) {
+
+                            if (ereq.col < len)
+                                fptr->lines[ereq.line].text[ereq.col] = ' ';
+
+                        } else {
+
+                            while (len < ereq.col)
+                                fptr->lines[ereq.line].text[len++] = ' ';
+
+                            fptr->lines[ereq.line].text[ereq.col] = ereq.c;
+
+                            if (ereq.col >= len)
+                            fptr->lines[ereq.line].text[ereq.col + 1] = NIL;
+                        }
+                    }
+                }
+
+            } else if (type == PKT_SYNC_REQ) {
+
+                SyncRequest sreq;
+                if (recv(client_fd, &sreq, sizeof sreq, MSG_WAITALL) <= 0)
+                    break;
+
+                SyncResponse sres = {
+
+                    .type = PKT_SYNC_RES,
+                    .success = false,
+                    .nlines = 0,
+                };
+
+                forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
+
+                    if (shared_files[i].active && !strcmp(shared_files[i].path, sreq.path)) {
+
+                        sres.success = true;
+                        sres.nlines = shared_files[i].nlines;
+
+                        forrange(size_t, l, 0, sres.nlines, 1)
+                            strncpy(sres.lines[l], shared_files[i].lines[l].text, __PACKET_LEN_MAX__ - 1);
+
+                        break;
+                    }
                 }
 
                 size_t total_sent = 0;
-                char* ptr = (char*)&fres;
+                char* ptr = (char*)&sres;
 
-                while (total_sent < sizeof(fres)) {
+                while (total_sent < sizeof sres) {
 
-                    ssize_t s = send(client_fd, ptr + total_sent, sizeof(fres) - total_sent, 0);
+                    ssize_t s = send(client_fd, ptr + total_sent, sizeof sres - total_sent, 0);
 
                     if (s <= 0)
                         break;
 
                     total_sent += s;
                 }
+                
 
             } else {
 
