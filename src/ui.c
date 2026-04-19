@@ -166,7 +166,7 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
 
                             wclear(win_editor);
                             box(win_editor, 0, 0);
-                            mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x>]", freq.path);
+                            mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x> | <C-f>]", freq.path);
 
                             if (fres.success) {
 
@@ -209,6 +209,25 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
                     wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
                     wrefresh(win_editor);
                 }
+            }
+
+        } else if (c == CTRL('f') && in_editor) {
+
+            FlushRequest ffreq = {.type = PKT_FLUSH_REQ};
+            strncpy(ffreq.path, current_file, __FILENAME_LEN_MAX__);
+            send(server_fd, &ffreq, sizeof ffreq, 0);
+
+            FlushResponse ffres;
+            if (recv(server_fd, &ffres, sizeof ffres, MSG_WAITALL) > 0) {
+
+                if (ffres.success)
+                    mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x> | <C-f>] [Flushed]", current_file);
+
+                else
+                    mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x> | <C-f>] [Flush Failed]");
+
+                wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+                wrefresh(win_editor);
             }
         
         } else if (in_editor) {

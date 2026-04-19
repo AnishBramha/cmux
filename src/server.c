@@ -435,6 +435,59 @@ void handle_client_connection(int client_fd) {
                     total_sent += s;
                 }
                 
+            } else if (type == PKT_FLUSH_REQ) {
+
+                FlushRequest ffreq;
+                if (recv(client_fd, &ffreq, sizeof ffreq, MSG_WAITALL) <= 0)
+                    break;
+                
+                FlushResponse ffres = {.type = PKT_FLUSH_RES, .success = false};
+                
+                ActiveFile* fptr = NULL;
+                forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
+
+                    if (shared_files[i].active && !strcmp(shared_files[i].path, ffreq.path)) {
+                        
+                        fptr = &shared_files[i];
+                        break;
+                    }
+                }
+
+                if (fptr) {
+
+                    char path[__FILENAME_LEN_MAX__];
+                    sprintf(path, "data/remote/%s", ffreq.path);
+
+                    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO);
+                    if (fd == -1)
+                        fprintf(stderr, "SERVER: Failed to flush file `%s` to disk from client `%s`\n", path, lreq.username);
+
+                    else {
+
+                        forrange(size_t, l, 0, fptr->nlines, 1) {
+
+                            write(fd, fptr->lines[l].text, strlen(fptr->lines[l].text));
+                            write(fd, "\n", 1);
+                        }
+                        
+                        close(fd);
+                        ffres.success = true;
+
+                        printf("SERVER: Flushed file `%s` to disk from client `%s`\n", path, lreq.username);
+                    }
+                }
+
+                size_t total_sent = 0;
+                char* ptr = (char*)&ffres;
+
+                while (total_sent < sizeof ffres) {
+
+                    ssize_t s = send(client_fd, ptr + total_sent, sizeof ffres - total_sent, 0);
+                    if (s <= 0)
+                        break;
+
+                    total_sent += s;
+                }
 
             } else {
 

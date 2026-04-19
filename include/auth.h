@@ -42,6 +42,8 @@ typedef enum {
     PKT_EDIT_REQ,
     PKT_SYNC_REQ,
     PKT_SYNC_RES,
+    PKT_FLUSH_REQ,
+    PKT_FLUSH_RES,
     PKT_ERR,
 
 } PacketType;
@@ -145,6 +147,22 @@ typedef struct {
     char lines[__FILE_LINES_MAX__][__PACKET_LEN_MAX__];
 
 } SyncResponse;
+
+
+typedef struct {
+
+    PacketType type;
+    char path[__FILENAME_LEN_MAX__];
+
+} FlushRequest;
+
+
+typedef struct {
+
+    PacketType type;
+    bool success;
+
+} FlushResponse;
 
 
 
