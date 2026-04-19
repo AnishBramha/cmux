@@ -237,6 +237,8 @@ void handle_client_connection(int client_fd) {
             printf("SERVER: Sent %d directory nodes to client `%s`\n", dres.nnodes, lreq.username);
         }
 
+        pid_t holder = 0;
+
         loop {
 
             PacketType type;
@@ -358,6 +360,8 @@ void handle_client_connection(int client_fd) {
                 if (recv(client_fd, &ereq, sizeof ereq, MSG_WAITALL) <= 0)
                     break;
 
+                holder = ereq.clipid;
+
                 ActiveFile* fptr = NULL;
                 forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
 
@@ -412,6 +416,8 @@ void handle_client_connection(int client_fd) {
                 SyncRequest sreq;
                 if (recv(client_fd, &sreq, sizeof sreq, MSG_WAITALL) <= 0)
                     break;
+
+                holder = sreq.clipid;
 
                 SyncResponse sres = {
 
@@ -521,6 +527,27 @@ void handle_client_connection(int client_fd) {
                 char trash;
                 recv(client_fd, &trash, 1, 0);
             }
+        }
+
+        if (holder) {
+
+            forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
+
+                if (shared_files[i].active) {
+
+                    pthread_mutex_lock(&shared_files[i].edit_lock);
+
+                    forrange(size_t, l, 0, __FILE_LINES_MAX__, 1) {
+
+                        if (shared_files[i].lines[l].locked == holder)
+                            shared_files[i].lines[l].locked = 0;
+                    }
+
+                    pthread_mutex_unlock(&shared_files[i].edit_lock);
+                }
+            }
+
+            printf("SERVER: Released all line locks for client [%d] `%s`", holder, lreq.username);
         }
 
     } else

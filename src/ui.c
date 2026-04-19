@@ -144,11 +144,13 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
                     if (sres.lines[l].locked != 0 && sres.lines[l].locked != pid) {
 
                         wattron(win_editor, COLOR_PAIR(2));
-                        mvwprintw(win_editor, l + 2, 2, "%2zu | %-60s", l + 1, sres.lines[l].text);
+                        mvwprintw(win_editor, l + 2, 2, "%2zu ", l + 1, sres.lines[l].text);
                         wattroff(win_editor, COLOR_PAIR(2));
 
                     } else
-                        mvwprintw(win_editor, l + 2, 2, "%2zu | %-60s", l + 1, sres.lines[l].text);
+                        mvwprintw(win_editor, l + 2, 2, "%2zu ", l + 1, sres.lines[l].text);
+
+                    wprintw(win_editor, "| %-60s", sres.lines[l].text);
                 } 
                         wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
                         wrefresh(win_editor);
