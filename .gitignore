@@ -3,7 +3,6 @@ target
 bin
 *.out
 *.exe
-*.txt
 *.i
 *.s
 *.d
@@ -18,6 +17,7 @@ bin
 *.dat
 *.bin
 *.log
+seed*
 .DS_Store
 
 

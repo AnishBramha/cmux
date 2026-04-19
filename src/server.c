@@ -18,6 +18,7 @@ static inline char* strrole(Role role) {
 size_t* nusers = NULL;
 Record* users = NULL;
 ActiveFile* shared_files = NULL;
+pthread_mutex_t* db_lock = NULL;
 
 
 void run_server_daemon(void) {
@@ -133,6 +134,17 @@ static void createdirs(const char* fpath) {
 
 
 
+static void flush_users_db(void) {
+
+    int fd = open(__USERS_DB__, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    if (fd != -1) {
+
+        write(fd, users, sizeof(Record) * (*nusers));
+        close(fd);
+    }
+}
+
+
 
 void handle_client_connection(int client_fd) {
 
@@ -189,54 +201,6 @@ void handle_client_connection(int client_fd) {
         printf("SERVER: Client authentication for `%s` finished with role `%s`\n", lreq.username, strrole(lres.role));
 
         createdirs("data/remote/");
-
-        DirRequest dreq;
-        if (recv(client_fd, &dreq, sizeof dreq, 0) > 0 && dreq.type == PKT_DIR_REQ) {
-            
-            printf("SERVER: Directory request received from client `%s`\n", lreq.username);
-            DirResponse dres = {.type = PKT_DIR_RES, .nnodes = 0};
-
-            if (lres.role == ADMIN)
-                scan_directory("data/remote", &dres, 0);
-            
-            else {
-
-                forrange(size_t, i, 0, *nusers, 1) {
-
-                    if (!strcmp(users[i].username, lreq.username)) {
-                        
-                        forrange(int, f, 0, __FILES_OWNED_MAX__, 1) {
-
-                            if (users[i].files[f][0] != NIL) {
-
-                                size_t idx = dres.nnodes++;
-                                strncpy(dres.nodes[idx].name, users[i].files[f], __FILENAME_LEN_MAX__);
-
-                                dres.nodes[idx].type = NODE_FILE;
-                                dres.nodes[idx].depth = 0;
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-
-            size_t total_sent = 0;
-            char* ptr = (char*)&dres;
-
-            while (total_sent < sizeof(dres)) {
-
-                ssize_t s = send(client_fd, ptr + total_sent, sizeof(dres) - total_sent, 0);
-
-                if (s <= 0)
-                    break;
-                
-                total_sent += s;
-            }
-
-            printf("SERVER: Sent %d directory nodes to client `%s`\n", dres.nnodes, lreq.username);
-        }
-
         pid_t holder = 0;
 
         loop {
@@ -522,6 +486,197 @@ void handle_client_connection(int client_fd) {
                     total_sent += s;
                 }
 
+            } else if (type == PKT_USERS_REQ) {
+
+                UsersRequest ureq;
+                if (recv(client_fd, &ureq, sizeof ureq, MSG_WAITALL) > 0) {
+
+                    UsersResponse* ures = malloc(sizeof(UsersResponse));
+                    ures->type = PKT_USERS_RES;
+
+                    pthread_mutex_lock(db_lock);
+                    
+                    ures->nusers = *nusers;
+                    memcpy(ures->users, users, sizeof(Record) * (*nusers));
+
+                    pthread_mutex_unlock(db_lock);
+
+                    size_t total_sent = 0;
+                    char* ptr = (char*)ures;
+
+                    while (total_sent < sizeof(UsersResponse)) {
+
+                        ssize_t s = send(client_fd, ptr + total_sent, sizeof(UsersResponse) - total_sent, 0);
+                        if (s <= 0)
+                            break;
+
+                        total_sent += s;
+                    }
+
+                    free(ures);
+                }
+
+            } else if (type == PKT_ADDUSER_REQ) {
+
+                AddUserRequest areq;
+                if (recv(client_fd, &areq, sizeof areq, MSG_WAITALL) > 0) {
+
+                    AddUserResponse ares = {
+
+                        .type = PKT_ADDUSER_RES,
+                        .success = false,
+                    };
+
+                    pthread_mutex_lock(db_lock);
+
+                    bool exists = false;
+                    forrange(size_t, i, 0, *nusers, 1) {
+
+                        if (!strncmp(users[i].username, areq.username, __USERNAME_LEN_MAX__)) {
+
+                            exists = true;
+                            break;
+                        }
+                    }
+
+                    if (exists)
+                        sprintf(ares.msg, "User `%s` already exists", areq.username);
+
+                    else if (*nusers >= __USERS_MAX__)
+                        strcpy(ares.msg, "Database full");
+
+                    else {
+
+                        strcpy(users[*nusers].username, areq.username);
+                        strcpy(users[*nusers].password, "changeme");
+                        users[(*nusers)++].role = CLIENT;
+                        flush_users_db();
+
+                        ares.success = true;
+                    }
+
+                    pthread_mutex_unlock(db_lock);
+                    send(client_fd, &ares, sizeof ares, 0);
+                }
+
+            } else if (type == PKT_RMUSER_REQ) {
+
+                RmUserRequest rreq;
+                if (recv(client_fd, &rreq, sizeof rreq, MSG_WAITALL) > 0) {
+
+                    RmUserResponse rres = {
+
+                        .type = PKT_RMUSER_RES,
+                        .success = false,
+                    };
+
+                    pthread_mutex_lock(db_lock);
+
+                    int idx = -1;
+                    forrange(size_t, i, 0, *nusers, 1) {
+
+                        if (!strncmp(users[i].username, rreq.username, __USERNAME_LEN_MAX__)) {
+
+                            idx = i;
+                            break;
+                        }
+
+                        if (idx == -1)
+                            sprintf(rres.msg, "User `%s` not found", rreq.username);
+                        
+                        else {
+
+                            forrange(size_t, i, idx, *nusers - 1, 1)
+                                users[i] = users[i + 1];
+
+                            (*nusers)--;
+                            flush_users_db();
+
+                            rres.success = true;
+                        }
+
+                        pthread_mutex_unlock(db_lock);
+                        send(client_fd, &rres, sizeof rres, 0);
+                    }
+                }
+
+            } else if (type == PKT_CHPSWD_REQ) {
+
+                ChPswdRequest preq;
+                if (recv(client_fd, &preq, sizeof preq, MSG_WAITALL) > 0) {
+
+                    ChPswdResponse pres = {
+
+                        .type = PKT_CHPSWD_RES,
+                        .success = false,
+                    };
+
+                    pthread_mutex_lock(db_lock);
+
+                    forrange(size_t, i, 0, *nusers, 1) {
+
+                        if (!strncmp(users[i].username, preq.username, __USERNAME_LEN_MAX__)) {
+
+                            strncpy(users[i].password, preq.pswd, __PASSWORD_LEN_MAX__);
+                            flush_users_db();
+
+                            pres.success = true;
+                            break;
+                        }
+                    }
+
+                    pthread_mutex_unlock(db_lock);
+                    send(client_fd, &pres, sizeof pres, 0);
+                }
+
+            } else if (type == PKT_DIR_REQ) {
+
+                DirRequest dreq;
+                if (recv(client_fd, &dreq, sizeof dreq, 0) > 0 && dreq.type == PKT_DIR_REQ) {
+                    
+                    printf("SERVER: Directory request received from client `%s`\n", lreq.username);
+                    DirResponse dres = {.type = PKT_DIR_RES, .nnodes = 0};
+
+                    if (lres.role == ADMIN)
+                        scan_directory("data/remote", &dres, 0);
+                    
+                    else {
+
+                        forrange(size_t, i, 0, *nusers, 1) {
+
+                            if (!strcmp(users[i].username, lreq.username)) {
+                                
+                                forrange(int, f, 0, __FILES_OWNED_MAX__, 1) {
+
+                                    if (users[i].files[f][0] != NIL) {
+
+                                        size_t idx = dres.nnodes++;
+                                        strncpy(dres.nodes[idx].name, users[i].files[f], __FILENAME_LEN_MAX__);
+
+                                        dres.nodes[idx].type = NODE_FILE;
+                                        dres.nodes[idx].depth = 0;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    size_t total_sent = 0;
+                    char* ptr = (char*)&dres;
+
+                    while (total_sent < sizeof(dres)) {
+
+                        ssize_t s = send(client_fd, ptr + total_sent, sizeof(dres) - total_sent, 0);
+                        if (s <= 0)
+                            break;
+                        
+                        total_sent += s;
+                    }
+
+                    printf("SERVER: Sent %d directory nodes to client `%s`\n", dres.nnodes, lreq.username);
+                }
+
             } else {
 
                 char trash;
@@ -560,7 +715,7 @@ void handle_client_connection(int client_fd) {
 
 void load_shm(void) {
 
-    size_t usr_memsize = sizeof(size_t) + sizeof(Record) * __USERS_MAX__;
+    size_t usr_memsize = sizeof(size_t) + sizeof(pthread_mutex_t) + sizeof(Record) * __USERS_MAX__;
     size_t files_memsize = sizeof(ActiveFile) * __OPEN_FILES_MAX__;
     size_t memsize = usr_memsize + files_memsize;
     void* mem = mmap(NULL, memsize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANON, -1, 0);
@@ -571,12 +726,14 @@ void load_shm(void) {
 
     nusers = (size_t*)mem;
     *nusers = 0;
-    users = (Record*)((char*)mem + sizeof(size_t));
+    users = (Record*)((char*)mem + sizeof(size_t) + sizeof(pthread_mutex_t));
     shared_files = (ActiveFile*)((char*)mem + usr_memsize);
+    db_lock = (pthread_mutex_t*)((char*)mem + sizeof(size_t));
 
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(db_lock, &attr);
 
     forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
         

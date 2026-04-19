@@ -1,4 +1,3 @@
-#include "auth.h"
 #include "common.h"
 #include "ui.h"
 
@@ -89,6 +88,7 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
     box(win_editor, 0, 0);
     mvwprintw(win_dired, 0, 2, "Dired");
     mvwprintw(win_editor, 0, 2, "Editor");
+    mvwprintw(win_editor, 0, term_x - dired_width - 12, "[< Back ]");
 
     int y = 2;
 
@@ -165,6 +165,9 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
             MEVENT event;
 
             if (getmouse(&event) == OK) {
+
+                if (!event.y && event.x >= term_x - 12)
+                    break;
 
                 if (event.x < dired_width) {
 
@@ -297,6 +300,312 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
 
     delwin(win_dired);
     delwin(win_editor);
+}
+
+
+int show_homepage(Role role) {
+
+    mousemask(ALL_MOUSE_EVENTS, NULL);
+    curs_set(0);
+    int term_y, term_x;
+    getmaxyx(stdscr, term_y, term_x);
+
+    WINDOW* win = newwin(term_y, term_x, 0, 0);
+    wtimeout(win, -1);
+    keypad(win, TRUE);
+
+    box(win, 0, 0);
+    mvwprintw(win, 2, term_x / 2 - 10, "cmux session");
+    mvwprintw(win, 5, term_x / 2 - 10, "[ View Files ]");
+    mvwprintw(win, 7, term_x / 2 - 10, (role == ADMIN ? "[ View Users]" : "[ View Account ]"));
+    mvwprintw(win, 9, term_x / 2 - 10, "[ Logout ]");
+    wrefresh(win);
+
+    int result = -1;
+    int c;
+    while ((c = wgetch(win))) {
+
+        if (c == KEY_MOUSE) {
+
+            MEVENT event;
+            if (getmouse(&event) == OK) {
+
+                if (term_x / 2 - 10 <= event.x && event.x <= term_x / 2 + 4) {
+
+                    switch (event.y) {
+
+                        case 5:
+                            result = 1; 
+                            goto done; 
+
+                        case 7:
+                            result = 2;
+                            goto done;
+
+                        case 9:
+                            result = 0;
+                            goto done;
+
+                        default:
+                            break;
+                    }
+                }
+            }
+        }
+    }
+
+    done:
+        delwin(win);
+        return result;
+}
+
+
+
+void show_admin_users(int server_fd) {
+
+    mousemask(ALL_MOUSE_EVENTS, NULL);
+    int term_y, term_x;
+    getmaxyx(stdscr, term_y, term_x);
+    WINDOW* win = newwin(term_y, term_x, 0, 0);
+    wtimeout(win, 50);
+    keypad(win, TRUE);
+
+    char buf[__USERNAME_LEN_MAX__] = {NIL};
+    int len = 0;
+    bool focused = false;
+    char msg[__ERRMSG_LEN_MAX__] = {NIL};
+
+    int c;
+    while ((c = wgetch(win))) {
+
+        if (c == ERR) {
+
+            UsersRequest ureq = {.type = PKT_USERS_REQ};
+            send(server_fd, &ureq, sizeof ureq, 0);
+
+            UsersResponse* ures = malloc(sizeof(UsersResponse));
+            if (recv(server_fd, ures, sizeof(UsersResponse), MSG_WAITALL) > 0) {
+
+                wclear(win);
+                box(win, 0, 0);
+
+                mvwprintw(win, 0, term_x - 12, "[< Back ]");
+                mvwprintw(win, 2, 4, "%-20s | %-20s | %s", "Username", "Password", "Files Owned");
+                mvwprintw(win, 3, 4, "---------------------------------------------------------------");
+
+                forrange(size_t, i, 0, ures->nusers, 1) {
+
+                    int nfiles = 0;
+                    
+                    forrange(int, f, 0, __FILES_OWNED_MAX__, 1) {
+
+                        if (ures->users[i].files[f][0])
+                            nfiles++;
+
+                        }
+
+                        mvwprintw(win, i + 4, 4, "%-20s | %-20s | %d", ures->users[i].username, ures->users[i].password, nfiles);
+                    }
+
+                int bottom_y = term_y - 4;
+                mvwprintw(win, bottom_y, 4, "Username: [ %-20s ]", buf);
+                mvwprintw(win, bottom_y, 38, "[ Add ]");
+                mvwprintw(win, bottom_y, 48, "[ Remove ]");
+
+                if (msg[0])
+                    mvwprintw(win, bottom_y + 1, 4, "%s", msg);
+
+                wrefresh(win);
+
+                free(ures);
+                continue;
+            }
+        }
+
+        if (c == KEY_MOUSE) {
+
+            MEVENT event;
+            if (getmouse(&event) == OK) {
+
+                if (!event.y && event.x >= term_x - 12)
+                    break;
+                    
+                int bottom_y = term_y - 4;
+                if (event.y == bottom_y && 16 <= event.x && event.x <= 36) {
+
+                    focused = true;
+                    curs_set(1);
+
+                } else if (event.y == bottom_y && 38 <= event.x && event.x <= 45) {
+
+                    AddUserRequest ureq = {.type = PKT_ADDUSER_REQ};
+                    strncpy(ureq.username, buf, __USERNAME_LEN_MAX__);
+                    send(server_fd, &ureq, sizeof ureq, 0);
+
+                    AddUserResponse ures;
+                    if (recv(server_fd, &ures, sizeof ures, MSG_WAITALL) > 0)
+                        strncpy(msg, ures.msg, __ERRMSG_LEN_MAX__);
+                    
+                    else
+                        msg[0] = NIL;
+
+                    buf[0] = NIL;
+                    len = 0;
+                    focused = false;
+                    curs_set(0);
+
+                } else if (event.y == bottom_y && 48 <= event.x && event.x <= 58) {
+
+                    RmUserRequest ureq = {.type = PKT_RMUSER_REQ};
+                    strncpy(ureq.username, buf, __USERNAME_LEN_MAX__);
+                    send(server_fd, &ureq, sizeof ureq, 0);
+
+                    RmUserResponse ures;
+                    if (recv(server_fd, &ures, sizeof ures, MSG_WAITALL) > 0) {
+
+                        if (ures.success)
+                            msg[0] = NIL;
+
+                        else
+                            strncpy(msg, ures.msg, __ERRMSG_LEN_MAX__);
+
+                        buf[0] = 0;
+                        len = 0;
+                        focused = false;
+                        curs_set(0);
+                    }
+
+                } else {
+
+                    focused = false;
+                    curs_set(0);
+                }
+            }
+
+        } else if (focused) {
+
+            if (c == KEY_BACKSPACE || c == 127 || c == '\b') {
+
+                if (len > 0)
+                    buf[--len] = NIL;
+
+            } else if (isprint(c) && len < 20) {
+
+                buf[len++] = c;
+                buf[len] = NIL;
+            }
+        }
+    }
+
+    delwin(win);
+}
+
+
+void show_client_account(int server_fd, const char* username) {
+
+    int term_y, term_x;
+    getmaxyx(stdscr, term_y, term_x);
+    WINDOW* win = newwin(term_y, term_x, 0, 0);
+    wtimeout(win, 50);
+    keypad(win, TRUE);
+
+    char buf[__PASSWORD_LEN_MAX__] = {NIL};
+    int len = 0;
+    bool focused = false;
+    char msg[100] = {NIL};
+
+    int c;
+    while ((c = wgetch(win))) {
+
+        if (c == ERR) {
+
+            UsersRequest ureq = {.type = PKT_USERS_REQ};
+            send(server_fd, &ureq, sizeof ureq, 0);
+
+            UsersResponse* ures = malloc(sizeof(UsersResponse));
+            if (recv(server_fd, ures, sizeof(UsersResponse), MSG_WAITALL) > 0) {
+
+                wclear(win);
+                box(win, 0, 0);
+                mvwprintw(win, 0, term_x - 12, "[< Back ]");
+                mvwprintw(win, 2, 4, "Account Details");
+
+                forrange(size_t, i, 0, ures->nusers, 1) {
+
+                    if (!strncmp(ures->users[i].username, username, __USERNAME_LEN_MAX__)) {
+
+                        mvwprintw(win, 4, 4, "Username: %s", ures->users[i].username);
+                        mvwprintw(win, 5, 4, "Password: %s", ures->users[i].password);
+                        break;
+                    }
+                }
+                
+                mvwprintw(win, 8, 4, "Change Password: [ %-20s ]", buf);
+                mvwprintw(win, 8, 48, "[ v ]");
+
+                if (msg[0])
+                    mvwprintw(win, 10, 4, "%s", msg);
+
+                wrefresh(win);
+            }
+
+            free(ures);
+            continue;
+        }
+
+        if (c == KEY_MOUSE) {
+
+            MEVENT event;
+            if (getmouse(&event) == OK) {
+
+                if (!event.y && event.x >= term_x - 12)
+                    break;
+
+                if (event.y == 8 && 23 <= event.x && event.x <= 45) {
+
+                    focused = true;
+                    curs_set(1);
+
+                } else if (event.y == 8 && 48 <= event.x && event.x <= 52) {
+
+                    ChPswdRequest creq = {.type = PKT_CHPSWD_REQ};
+                    strncpy(creq.username, username, __USERNAME_LEN_MAX__);
+                    strncpy(creq.pswd, buf, __PASSWORD_LEN_MAX__);
+                    send(server_fd, &creq, sizeof creq, 0);
+
+                    ChPswdResponse cres;
+                    if (recv(server_fd, &cres, sizeof cres, MSG_WAITALL) > 0) {
+
+                        strcpy(msg, cres.success ? "Password updated" : "Password Update Failed");
+                        buf[0] = NIL;
+                        len = 0;
+                        focused = false;
+                        curs_set(0);
+                    }
+
+                } else {
+
+                    focused = false;
+                    curs_set(0);
+                }
+            }
+
+        } else if (focused) {
+
+            if (c == KEY_BACKSPACE || c == 127 || c == '\b') {
+
+                if (len > 0)
+                    buf[--len] = NIL;
+
+            } else if (isprint(c) && len < 20) {
+
+                buf[len++] = c;
+                buf[len] = NIL;
+            }
+        }
+    }
+
+    delwin(win);
 }
 
 

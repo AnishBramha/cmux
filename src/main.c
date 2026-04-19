@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
 
     int server_sock_fd = -1;
     pid_t clipid;
+    Role clirole;
 
     initscr();
     cbreak();
@@ -41,17 +42,44 @@ int main(int argc, char** argv) {
 
         endwin();
 
-        server_sock_fd = run_client_handler(&username, &password, errmsg, &clipid);
+        server_sock_fd = run_client_handler(&username, &password, errmsg, &clipid, &clirole);
         if (server_sock_fd != -1)
             break;
 
         usleep(1000);
     }
 
-    clear();
-    refresh();
+    bool running = true;
+    while (running) {
+        
+        clear();
+        refresh();
 
-    show_dired(server_sock_fd, username.str, clipid);
+        int choice = show_homepage(clirole);
+        switch (choice) {
+
+            case 0:
+                running = false;
+                break;
+
+            case 1:
+                show_dired(server_sock_fd, username.str, clipid);
+                break;
+                
+            case 2:
+
+                if (clirole == ADMIN)
+                    show_admin_users(server_sock_fd);
+
+                else
+                    show_client_account(server_sock_fd, username.str);
+
+                break;
+
+            default:
+                break;
+        }
+    }
 
     endwin();
     

@@ -44,6 +44,14 @@ typedef enum {
     PKT_SYNC_RES,
     PKT_FLUSH_REQ,
     PKT_FLUSH_RES,
+    PKT_USERS_REQ,
+    PKT_USERS_RES,
+    PKT_ADDUSER_REQ,
+    PKT_ADDUSER_RES,
+    PKT_RMUSER_REQ,
+    PKT_RMUSER_RES,
+    PKT_CHPSWD_REQ,
+    PKT_CHPSWD_RES,
     PKT_ERR,
 
 } PacketType;
@@ -175,6 +183,75 @@ typedef struct {
     bool success;
 
 } FlushResponse;
+
+
+typedef struct {
+
+    PacketType type;
+
+} UsersRequest;
+
+
+typedef struct {
+
+    PacketType type;
+    size_t nusers;
+    Record users[__USERS_MAX__];
+
+} UsersResponse;
+
+
+typedef struct {
+    
+    PacketType type;
+    char username[__USERNAME_LEN_MAX__];
+
+} AddUserRequest;
+
+
+typedef struct {
+    
+    PacketType type;
+    bool success;
+    char msg[__ERRMSG_LEN_MAX__];
+
+} AddUserResponse;
+
+
+typedef struct {
+
+    PacketType type;
+    char username[__USERNAME_LEN_MAX__];
+
+} RmUserRequest;
+
+typedef struct {
+
+    PacketType type;
+    bool success;
+    char msg[__ERRMSG_LEN_MAX__];
+
+} RmUserResponse;
+
+
+typedef struct {
+
+    PacketType type;
+    char username[__USERNAME_LEN_MAX__];
+    char pswd[__PASSWORD_LEN_MAX__];
+
+} ChPswdRequest;
+
+
+typedef struct {
+
+    PacketType type;
+    bool success;
+    char msg[__ERRMSG_LEN_MAX__];
+
+} ChPswdResponse;
+
+
 
 
 
