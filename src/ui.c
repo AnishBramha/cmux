@@ -1,6 +1,5 @@
 #include "auth.h"
 #include "common.h"
-#include <fenv.h>
 #include "ui.h"
 
 #define CTRL(key) ((key) & 0x1F)
@@ -61,7 +60,7 @@ void show_login_screen(string_view* username, string_view* password, const char*
 
 
 
-void show_dired(int server_fd, const char *username, pid_t pid) {
+void show_dired(int server_fd, const char* username, pid_t pid) {
 
     DirRequest dreq = {.type = PKT_DIR_REQ};
     strncpy(dreq.username, username, __USERNAME_LEN_MAX__);
@@ -113,6 +112,7 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
     int cursor_x = 0;
     int line_offt = 7;
 
+    pid_t locked_lines[__FILE_LINES_MAX__] = {0};
     wtimeout(stdscr, 50);
 
     int c;
@@ -122,7 +122,12 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
 
             if (in_editor) {
 
-                SyncRequest sreq = {.type = PKT_SYNC_REQ};
+                SyncRequest sreq = {
+                    
+                    .type = PKT_SYNC_REQ,
+                    .cursor_line = cursor_y,
+                    .clipid = pid,
+                };
                 strncpy(sreq.path, current_file, __FILENAME_LEN_MAX__ - 1);
                 send(server_fd, &sreq, sizeof sreq, 0);
 
@@ -131,9 +136,20 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
 
                     if (sres.success) {
 
-                        forrange(size_t, l, 0, sres.nlines, 1)
-                            mvwprintw(win_editor, l + 2, 2, "%2zu | %-60s", l + 1, sres.lines[l]);
 
+                forrange(size_t, l, 0, sres.nlines, 1) {
+
+                    locked_lines[l] = sres.lines[l].locked;
+                    
+                    if (sres.lines[l].locked != 0 && sres.lines[l].locked != pid) {
+
+                        wattron(win_editor, COLOR_PAIR(2));
+                        mvwprintw(win_editor, l + 2, 2, "%2zu | %-60s", l + 1, sres.lines[l].text);
+                        wattroff(win_editor, COLOR_PAIR(2));
+
+                    } else
+                        mvwprintw(win_editor, l + 2, 2, "%2zu | %-60s", l + 1, sres.lines[l].text);
+                } 
                         wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
                         wrefresh(win_editor);
                     }
@@ -176,7 +192,7 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
                                 cursor_x = 0;
 
                                 forrange(size_t, l, 0, fres.nlines, 1)
-                                    mvwprintw(win_editor, l + 2, 2, "%2zu | %s", l + 1, fres.lines[l]);
+                                    mvwprintw(win_editor, l + 2, 2, "%2zu | %s", l + 1, fres.lines[l].text);
 
                                 curs_set(1);
                                 wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
@@ -239,8 +255,15 @@ void show_dired(int server_fd, const char *username, pid_t pid) {
                 .col = cursor_x,
                 .c = c,
                 .del = false,
+                .clipid = pid,
             };
             strncpy(ereq.path, current_file, __FILENAME_LEN_MAX__);
+
+            if (locked_lines[cursor_y] && locked_lines[cursor_y] != pid) {
+
+                beep();
+                continue;
+            }
 
             if (c == KEY_BACKSPACE || c == 127 || c == '\b') {
 

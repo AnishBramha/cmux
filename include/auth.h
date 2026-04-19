@@ -59,6 +59,14 @@ typedef enum {
 
 typedef struct {
 
+    pid_t locked;
+    char text[__PACKET_LEN_MAX__];
+
+} Line;
+
+
+typedef struct {
+
     PacketType type;
     char username[__USERNAME_LEN_MAX__];
     char password[__PASSWORD_LEN_MAX__];
@@ -115,7 +123,7 @@ typedef struct {
     PacketType type;
     bool success;
     size_t nlines;
-    char lines[__FILE_LINES_MAX__][__PACKET_LEN_MAX__];
+    Line lines[__FILE_LINES_MAX__];
 
 } FOpenResponse;
 
@@ -128,6 +136,7 @@ typedef struct {
     int col;
     char c;
     bool del;
+    pid_t clipid;
 
 } EditRequest;
 
@@ -136,15 +145,18 @@ typedef struct {
 
     PacketType type;
     char path[__FILENAME_LEN_MAX__];
+    int cursor_line;
+    pid_t clipid;
 
 } SyncRequest;
+
 
 typedef struct {
     
     PacketType type;
     bool success;
     size_t nlines;
-    char lines[__FILE_LINES_MAX__][__PACKET_LEN_MAX__];
+    Line lines[__FILE_LINES_MAX__];
 
 } SyncResponse;
 

@@ -293,7 +293,7 @@ void handle_client_connection(int client_fd) {
                             ssize_t bytes;
                             int col = 0;
 
-                            while ((bytes = read(fd, buffer, sizeof buffer) > 0)) {
+                            while ((bytes = read(fd, buffer, sizeof buffer)) > 0) {
 
                                 forrange(ssize_t, i, 0, bytes, 1) {
 
@@ -336,7 +336,7 @@ void handle_client_connection(int client_fd) {
                     fres.nlines = fptr->nlines;
                     
                     forrange(size_t, l, 0, fres.nlines, 1)
-                        strncpy(fres.lines[l], fptr->lines[l].text, __PACKET_LEN_MAX__ - 1);
+                        fres.lines[l] = fptr->lines[l];
 
                     size_t total_sent = 0;
                     char* ptr = (char*)&fres;
@@ -372,6 +372,15 @@ void handle_client_connection(int client_fd) {
 
                     if (0 <= ereq.line  && ereq.line < __FILE_LINES_MAX__ && 0 <= ereq.col && ereq.col < __PACKET_LEN_MAX__ - 1) {
 
+                        pthread_mutex_lock(&fptr->edit_lock);
+
+                        if (fptr->lines[ereq.line].locked && fptr->lines[ereq.line].locked != ereq.clipid) {
+
+                            pthread_mutex_unlock(&fptr->edit_lock);
+                            goto skip_edit;
+                        }
+                        fptr->lines[ereq.line].locked = ereq.clipid;
+
                         if ((size_t)ereq.line >= fptr->nlines)
                             fptr->nlines = ereq.line + 1;
 
@@ -392,8 +401,11 @@ void handle_client_connection(int client_fd) {
                             if (ereq.col >= len)
                             fptr->lines[ereq.line].text[ereq.col + 1] = NIL;
                         }
+
+                        pthread_mutex_unlock(&fptr->edit_lock);
                     }
                 }
+                skip_edit:;
 
             } else if (type == PKT_SYNC_REQ) {
 
@@ -415,9 +427,24 @@ void handle_client_connection(int client_fd) {
                         sres.success = true;
                         sres.nlines = shared_files[i].nlines;
 
-                        forrange(size_t, l, 0, sres.nlines, 1)
-                            strncpy(sres.lines[l], shared_files[i].lines[l].text, __PACKET_LEN_MAX__ - 1);
+                        pthread_mutex_lock(&shared_files[i].edit_lock);
 
+                        forrange(size_t, l, 0, __FILE_LINES_MAX__, 1) {
+
+                            if (shared_files[i].lines[l].locked == sreq.clipid && (int)l != sreq.cursor_line)
+                                shared_files[i].lines[l].locked = 0;
+                        }
+
+                        if (0 <= sreq.cursor_line && sreq.cursor_line < __FILE_LINES_MAX__) {
+
+                            if (!shared_files[i].lines[sreq.cursor_line].locked)
+                                shared_files[i].lines[sreq.cursor_line].locked = sreq.clipid;
+                        }
+
+                        forrange(size_t, l, 0, sres.nlines, 1)
+                            sres.lines[l] = shared_files[i].lines[l];
+
+                        pthread_mutex_unlock(&shared_files[i].edit_lock);
                         break;
                     }
                 }
@@ -520,8 +547,17 @@ void load_shm(void) {
     users = (Record*)((char*)mem + sizeof(size_t));
     shared_files = (ActiveFile*)((char*)mem + usr_memsize);
 
-    forrange(int, i, 0, __OPEN_FILES_MAX__, 1)
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+
+    forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
+        
         shared_files[i].active = false;
+        pthread_mutex_init(&shared_files[i].edit_lock, &attr);
+    }
+
+    pthread_mutexattr_destroy(&attr);
 
     int fd = open(__USERS_DB__, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
     if (fd == -1) {

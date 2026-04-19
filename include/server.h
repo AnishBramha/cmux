@@ -1,21 +1,15 @@
 #pragma once
 
+#include <pthread.h>
 #include "auth.h"
 #include "common.h"
-
-
-typedef struct {
-
-    pid_t locked;
-    char text[__PACKET_LEN_MAX__];
-
-} Line;
 
 typedef struct {
 
     bool active;
     char path[__FILENAME_LEN_MAX__];
     size_t nlines;
+    pthread_mutex_t edit_lock;
     Line lines[__FILE_LINES_MAX__];
 
 } ActiveFile;
