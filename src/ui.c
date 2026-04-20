@@ -566,7 +566,6 @@ int show_homepage(Role role) {
                             goto done;
 
                         default:
-                            unreachable();
                             break;
                     }
                 }
