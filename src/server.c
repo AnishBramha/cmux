@@ -1,6 +1,4 @@
 #include "server.h"
-#include "common.h"
-#include "auth.h"
 #include <signal.h>
 #include <sys/mman.h>
 #include <dirent.h>
@@ -83,11 +81,8 @@ void run_server_daemon(void) {
         if (!pid) {
 
             close(server_fd);
-
             printf("CLIENT [%d]: Accepted connection from INET %s | PORT %d\n", getpid(), client_ip, __PORT__);
-
             handle_client_connection(client_fd);
-
             printf("CLIENT [%d]: Closing connection from INET %s | PORT %d\n", getpid(), client_ip, __PORT__);
             close(client_fd);
             exit(EXIT_SUCCESS);
@@ -197,7 +192,6 @@ void handle_client_connection(int client_fd) {
     if (lres.success) {
 
         printf("SERVER: Client authentication for `%s` finished with role `%s`\n", lreq.username, strrole(lres.role));
-
         createdirs("data/remote/");
         pid_t holder = 0;
 
@@ -380,7 +374,6 @@ void handle_client_connection(int client_fd) {
                     break;
 
                 holder = sreq.clipid;
-
                 SyncResponse sres = {
 
                     .type = PKT_SYNC_RES,
@@ -388,32 +381,54 @@ void handle_client_connection(int client_fd) {
                     .nlines = 0,
                 };
 
-                forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
+                bool alive = true;
+                if (lres.role == CLIENT) {
 
-                    if (shared_files[i].active && !strcmp(shared_files[i].path, sreq.path)) {
+                    alive = false;
+                    pthread_mutex_lock(db_lock);
+                    forrange(size_t, i, 0, *nusers, 1) {
 
-                        sres.success = true;
-                        sres.nlines = shared_files[i].nlines;
+                        if (!strncmp(users[i].username, lreq.username, __USERNAME_LEN_MAX__)) {
 
-                        pthread_mutex_lock(&shared_files[i].edit_lock);
-
-                        forrange(size_t, l, 0, __FILE_LINES_MAX__, 1) {
-
-                            if (shared_files[i].lines[l].locked == sreq.clipid && (int)l != sreq.cursor_line)
-                                shared_files[i].lines[l].locked = 0;
+                            alive = true;
+                            break;
                         }
+                    }
+                    pthread_mutex_unlock(db_lock);
+                }
 
-                        if (0 <= sreq.cursor_line && sreq.cursor_line < __FILE_LINES_MAX__) {
+                if (!alive)
+                    sres.type = PKT_TERM;
 
-                            if (!shared_files[i].lines[sreq.cursor_line].locked)
-                                shared_files[i].lines[sreq.cursor_line].locked = sreq.clipid;
+                else {
+
+                    forrange(int, i, 0, __OPEN_FILES_MAX__, 1) {
+
+                        if (shared_files[i].active && !strcmp(shared_files[i].path, sreq.path)) {
+
+                            sres.success = true;
+                            sres.nlines = shared_files[i].nlines;
+
+                            pthread_mutex_lock(&shared_files[i].edit_lock);
+
+                            forrange(size_t, l, 0, __FILE_LINES_MAX__, 1) {
+
+                                if (shared_files[i].lines[l].locked == sreq.clipid && (int)l != sreq.cursor_line)
+                                    shared_files[i].lines[l].locked = 0;
+                            }
+
+                            if (0 <= sreq.cursor_line && sreq.cursor_line < __FILE_LINES_MAX__) {
+
+                                if (!shared_files[i].lines[sreq.cursor_line].locked)
+                                    shared_files[i].lines[sreq.cursor_line].locked = sreq.clipid;
+                            }
+
+                            forrange(size_t, l, 0, sres.nlines, 1)
+                                sres.lines[l] = shared_files[i].lines[l];
+
+                            pthread_mutex_unlock(&shared_files[i].edit_lock);
+                            break;
                         }
-
-                        forrange(size_t, l, 0, sres.nlines, 1)
-                            sres.lines[l] = shared_files[i].lines[l];
-
-                        pthread_mutex_unlock(&shared_files[i].edit_lock);
-                        break;
                     }
                 }
 
@@ -640,17 +655,19 @@ void handle_client_connection(int client_fd) {
                     
                     else {
 
+                        bool alive = false;
+                        pthread_mutex_lock(db_lock);
                         forrange(size_t, i, 0, *nusers, 1) {
 
                             if (!strcmp(users[i].username, lreq.username)) {
-                                
+
+                                alive = true;
                                 forrange(int, f, 0, __FILES_OWNED_MAX__, 1) {
 
                                     if (users[i].files[f][0] != NIL) {
 
                                         size_t idx = dres.nnodes++;
                                         strncpy(dres.nodes[idx].name, users[i].files[f], __FILENAME_LEN_MAX__);
-
                                         dres.nodes[idx].type = NODE_FILE;
                                         dres.nodes[idx].depth = 0;
                                     }
@@ -658,6 +675,10 @@ void handle_client_connection(int client_fd) {
                                 break;
                             }
                         }
+                        pthread_mutex_unlock(db_lock);
+
+                        if (!alive)
+                            dres.type = PKT_TERM;
                     }
 
                     size_t total_sent = 0;
@@ -685,16 +706,18 @@ void handle_client_connection(int client_fd) {
                         .type = PKT_MKFILE_RES,
                         .success = false,
                     };
-
                     char path[__FILENAME_LEN_MAX__];
                     snprintf(path, __FILENAME_LEN_MAX__, "data/remote/%s", freq.name);
                     
-                    int fd = open(path, O_CREAT | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
-                    if (fd != -1)
-                        close(fd);
 
-                    if (lres.role == ADMIN)
+                    if (lres.role == ADMIN) {
+
+                        int fd = open(path, O_CREAT | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
+                        if (fd != -1)
+                            close(fd);
+
                         fres.success = true;
+                    }
 
                     else {
 
@@ -718,6 +741,11 @@ void handle_client_connection(int client_fd) {
                                 if (added) {
 
                                     flush_users_db();
+
+                                    int fd = open(path, O_CREAT | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
+                                    if (fd != -1)
+                                        close(fd);
+
                                     fres.success = true;
 
                                 } else
@@ -726,10 +754,8 @@ void handle_client_connection(int client_fd) {
                                 break;
                             }
                         }
-
                         pthread_mutex_unlock(db_lock);
                     }
-
                     send(client_fd, &fres, sizeof fres, 0);
                 }
 
@@ -807,7 +833,6 @@ void handle_client_connection(int client_fd) {
                     pthread_mutex_unlock(&shared_files[i].edit_lock);
                 }
             }
-
             printf("SERVER: Released all line locks for client [%d] `%s`\n", holder, lreq.username);
         }
 
@@ -890,7 +915,6 @@ void scan_directory(const char* path, DirResponse* dres, int depth) {
         size_t idx = dres->nnodes++;
         strncpy(dres->nodes[idx].name, dentry->d_name, __FILENAME_LEN_MAX__);
         dres->nodes[idx].depth = depth;
-
         char aug_path[__FILENAME_LEN_MAX__];
         sprintf(aug_path, "%s/%s", path, dentry->d_name);
 
@@ -903,7 +927,6 @@ void scan_directory(const char* path, DirResponse* dres, int depth) {
         } else
             dres->nodes[idx].type = NODE_FILE;
     }
-
     closedir(dir);
 }
 

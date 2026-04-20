@@ -16,6 +16,7 @@
 #include <sys/wait.h>
 #include <sys/select.h>
 #include <sys/types.h>
+#include <sysexits.h>
 #include "array.h"
 #include "string_view.h"
 
@@ -46,10 +47,10 @@
                                                                                                                  \
     do {                                                                                                         \
                                                                                                                  \
-        fprintf(stderr, "PANIC: Unreachable statement on line `%d` reached in file `%s`\n", __LINE__, __FILE__); \
+        fprintf(stderr, "PANIC: Unreachable statement on line %d reached in file `%s`\n", __LINE__, __FILE__); \
         abort();                                                                                                 \
                                                                                                                  \
-    } while (0);
+    } while (0)
 
 
 typedef enum {
@@ -59,19 +60,19 @@ typedef enum {
 
 } PendingResponse;
 
-#define todo(response, task, ...)                                                                                   \
+#define todo(response, task)                                                                                   \
                                                                                                                     \
     do {                                                                                                            \
                                                                                                                     \
-        fprintf(stderr, "TODO: Pending task `%s` on line `%d` in file `%s`\n", task, __LINE__, __FILE__);           \
+        fprintf(stderr, "TODO: Pending task `%s` on line %d in file `%s`\n", task, __LINE__, __FILE__);           \
                                                                                                                     \
         if (response == CRASH)                                                                                      \
             abort();                                                                                                \
                                                                                                                     \
-    } while (0);
+    } while (0)
 
 
-#define panic(errmsg, ...)                                                 \
+#define panic(errmsg, ...)                                                  \
                                                                            \
     do {                                                                   \
                                                                            \
@@ -80,7 +81,7 @@ typedef enum {
         fprintf(stderr, "PANIC: %s | REASON: %s\n", msg, strerror(errno)); \
         abort();                                                           \
                                                                            \
-    } while (0);
+    } while (0)
 
 
 

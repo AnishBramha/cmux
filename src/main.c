@@ -3,7 +3,6 @@
 #include "auth.h"
 #include "server.h"
 #include "client.h"
-#include <sysexits.h>
 
 
 int main(int argc, char** argv) {
@@ -77,6 +76,7 @@ int main(int argc, char** argv) {
                 break;
 
             default:
+                unreachable();
                 break;
         }
     }

@@ -1,4 +1,3 @@
-#include "common.h"
 #include "ui.h"
 
 #define CTRL(key) ((key) & 0x1F)
@@ -27,7 +26,6 @@ void show_login_screen(string_view* username, string_view* password, const char*
 
     wbkgd(login_win, COLOR_PAIR(1));
     box(login_win, 0, 0);
-
     mvwprintw(login_win, 1, (win_width - 14) / 2, "cmux session");
 
     if (errmsg && errmsg[0]) {
@@ -74,18 +72,16 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
     }
 
     mousemask(ALL_MOUSE_EVENTS, NULL);
-
     curs_set(0);
 
     int term_y, term_x;
     getmaxyx(stdscr, term_y, term_x);
-
     int dired_width = 30;
     WINDOW* win_dired = newwin(term_y, dired_width, 0, 0);
     WINDOW* win_editor = newwin(term_y, term_x - dired_width, 0, dired_width);
-
     box(win_dired, 0, 0);
     box(win_editor, 0, 0);
+
     mvwprintw(win_dired, 0, 2, "Dired");
     mvwprintw(win_editor, 0, 2, "Editor");
     mvwprintw(win_editor, 0, term_x - dired_width - 12, "[< Back ]");
@@ -135,6 +131,19 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
 
                 if (recv(server_fd, &dres, sizeof dres, MSG_WAITALL) > 0) {
 
+                    if (dres.type == PKT_TERM) {
+
+                        wclear(win_dired);
+                        box(win_dired, 0, 0);
+                        wattron(win_dired, COLOR_PAIR(2));
+                        mvwprintw(win_dired, 2, 2, "Account Terminated");
+                        wrefresh(win_dired);
+                        napms(3000);
+                        endwin();
+
+                        exit(EX_NOUSER);
+                    }
+
                     wclear(win_dired);
                     box(win_dired, 0, 0);
                     mvwprintw(win_dired, 0, 2, "Dired");
@@ -147,6 +156,7 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
 
                         forrange(int, d, 0, node.depth, 1)
                             wprintw(win_dired, " ");
+
                         wprintw(win_dired, (node.type == NODE_DIR ? "v %s" : "  %s"), dres.nodes[i].name);
                     }
                 }
@@ -176,6 +186,19 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
 
                 SyncResponse sres;
                 if (recv(server_fd, &sres, sizeof sres, MSG_WAITALL) > 0) {
+
+                    if (sres.type == PKT_TERM) {
+
+                        wclear(win_dired);
+                        box(win_dired, 0, 0);
+                        wattron(win_dired, COLOR_PAIR(2));
+                        mvwprintw(win_dired, 2, 2, "Account Terminated");
+                        wrefresh(win_dired);
+                        napms(3000);
+                        endwin();
+
+                        exit(EX_NOUSER);
+                    }
 
                     if (sres.success) {
 
@@ -216,23 +239,36 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
                 wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
                 wrefresh(win_editor);
             }
-
             continue;
         }
 
         if (c == KEY_MOUSE) {
 
             MEVENT event;
-
             if (getmouse(&event) == OK) {
 
-                if (!event.y && event.x >= term_x - 12)
+                if (!event.y && event.x >= term_x - 12) {
+
+                    if (in_editor) {
+
+                        SyncRequest sreq = {
+                            
+                            .type = PKT_SYNC_REQ,
+                            .cursor_line = -1,
+                            .clipid = pid,
+                        };
+                        strncpy(sreq.path, current_file, __FILENAME_LEN_MAX__ - 1);
+                        send(server_fd, &sreq, sizeof sreq, 0);
+
+                        SyncResponse sres;
+                        recv(server_fd, &sres, sizeof sres, MSG_WAITALL);
+                    }
                     break;
+                }
 
                 if (event.x < dired_width) {
 
                     int dy = term_y - 6;
-
                     if (event.y == dy + 1) {
 
                         dired_focus = 1;
@@ -247,8 +283,8 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
 
                         dired_focus = 0;
                         curs_set(0);
-                        int clicked_idx = event.y - 2;
 
+                        int clicked_idx = event.y - 2;
                         if (clicked_idx >= 0 && clicked_idx < dres.nnodes) {
 
                             if (dres.nodes[clicked_idx].type == NODE_FILE) {
@@ -481,7 +517,6 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
             }
         }
     }
-
     delwin(win_dired);
     delwin(win_editor);
 }
@@ -531,6 +566,7 @@ int show_homepage(Role role) {
                             goto done;
 
                         default:
+                            unreachable();
                             break;
                     }
                 }
@@ -580,16 +616,13 @@ void show_admin_users(int server_fd) {
                 forrange(size_t, i, 0, ures->nusers, 1) {
 
                     int nfiles = 0;
-                    
                     forrange(int, f, 0, __FILES_OWNED_MAX__, 1) {
 
                         if (ures->users[i].files[f][0])
                             nfiles++;
-
-                        }
-
-                        mvwprintw(win, i + 4, 4, "%-20s | %-20s | %d", ures->users[i].username, ures->users[i].password, nfiles);
                     }
+                    mvwprintw(win, i + 4, 4, "%-20s | %-20s | %d", ures->users[i].username, ures->users[i].password, nfiles);
+                }
 
                 int bottom_y = term_y - 4;
                 mvwprintw(win, bottom_y, 4, "Username: [ %-20s ]", buf);
@@ -600,10 +633,9 @@ void show_admin_users(int server_fd) {
                     mvwprintw(win, bottom_y + 1, 4, "%s", msg);
 
                 wrefresh(win);
-
-                free(ures);
-                continue;
             }
+            free(ures);
+            continue;
         }
 
         if (c == KEY_MOUSE) {
@@ -714,14 +746,28 @@ void show_client_account(int server_fd, const char* username) {
                 mvwprintw(win, 0, term_x - 12, "[< Back ]");
                 mvwprintw(win, 2, 4, "Account Details");
 
+                bool alive = false;
                 forrange(size_t, i, 0, ures->nusers, 1) {
 
                     if (!strncmp(ures->users[i].username, username, __USERNAME_LEN_MAX__)) {
 
+                        alive = true;
                         mvwprintw(win, 4, 4, "Username: %s", ures->users[i].username);
                         mvwprintw(win, 5, 4, "Password: %s", ures->users[i].password);
                         break;
                     }
+                }
+
+                if (!alive) {
+
+                    wattron(win, COLOR_PAIR(2));
+                    mvwprintw(win, term_y / 2, (term_x - 26) / 2, "Account Terminated");
+                    wattroff(win, COLOR_PAIR(2));
+                    wrefresh(win);
+                    napms(3000);
+                    endwin();
+
+                    exit(EX_NOUSER);
                 }
                 
                 mvwprintw(win, 8, 4, "Change Password: [ %-20s ]", buf);
@@ -732,7 +778,6 @@ void show_client_account(int server_fd, const char* username) {
 
                 wrefresh(win);
             }
-
             free(ures);
             continue;
         }

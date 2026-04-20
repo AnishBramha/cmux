@@ -1,5 +1,4 @@
 #include "client.h"
-#include "common.h"
 
 
 static inline char* strrole(Role role) {

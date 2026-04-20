@@ -56,7 +56,7 @@ typedef enum {
     PKT_MKFILE_RES,
     PKT_FLINK_REQ,
     PKT_FLINK_RES,
-    PKT_ERR,
+    PKT_TERM,
 
 } PacketType;
 
