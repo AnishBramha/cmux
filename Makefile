@@ -1,6 +1,6 @@
 CC = cc
 
-CFLAGS = -std=c23 -I. -Iinclude -Istd -Wall -Wextra -Wpedantic -Werror -Wno-sign-compare -MMD -Wno-gnu-zero-variadic-macro-arguments
+CFLAGS = -std=c23 -I. -Iinclude -Istd -Wall -Wextra -Wpedantic -Werror -Wno-sign-compare -MMD -Wno-gnu-zero-variadic-macro-arguments -D_GNU_SOURCE -Wno-format-overflow -Wno-format-truncation -Wno-format-extra-args
 LDFLAGS = -lm -lpthread -lncurses
 
 TARGET = target/cmux.out
@@ -31,7 +31,7 @@ $(TARGET): $(OBJS)
 	@mkdir -p $(dir $@)
 	@printf "\n$(BOLD)$(GREEN)Compilation finished with code %d ✓$(RESET)\n" $$status;
 	@echo "\n$(BOLD)$(CYAN)Linking ↺$(RESET)"
-	@if ! $(CC) $(LDFLAGS) -o $@ $^ > /dev/null ; then \
+	@if ! $(CC) -o $@ $^ $(LDFLAGS) > /dev/null ; then \
 		echo "\n$(BOLD)$(RED)Linking failed ✘$(RESET)\n"; \
 		exit 1;\
 	fi

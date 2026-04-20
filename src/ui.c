@@ -465,7 +465,7 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
                     mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x> | <C-f>] [Flushed]", current_file);
 
                 else
-                    mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x> | <C-f>] [Flush Failed]");
+                    mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x> | <C-f>] [Flush Failed]", current_file);
 
                 wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
                 wrefresh(win_editor);
