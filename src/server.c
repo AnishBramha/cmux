@@ -2,8 +2,6 @@
 #include "common.h"
 #include "auth.h"
 #include <signal.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -580,24 +578,24 @@ void handle_client_connection(int client_fd) {
                             idx = i;
                             break;
                         }
-
-                        if (idx == -1)
-                            sprintf(rres.msg, "User `%s` not found", rreq.username);
-                        
-                        else {
-
-                            forrange(size_t, i, idx, *nusers - 1, 1)
-                                users[i] = users[i + 1];
-
-                            (*nusers)--;
-                            flush_users_db();
-
-                            rres.success = true;
-                        }
-
-                        pthread_mutex_unlock(db_lock);
-                        send(client_fd, &rres, sizeof rres, 0);
                     }
+
+                    if (idx == -1)
+                        sprintf(rres.msg, "User `%s` not found", rreq.username);
+                    
+                    else {
+
+                        forrange(size_t, i, idx, *nusers - 1, 1)
+                            users[i] = users[i + 1];
+
+                        (*nusers)--;
+                        flush_users_db();
+
+                        rres.success = true;
+                    }
+
+                    pthread_mutex_unlock(db_lock);
+                    send(client_fd, &rres, sizeof rres, 0);
                 }
 
             } else if (type == PKT_CHPSWD_REQ) {
@@ -677,6 +675,114 @@ void handle_client_connection(int client_fd) {
                     printf("SERVER: Sent %d directory nodes to client `%s`\n", dres.nnodes, lreq.username);
                 }
 
+            } else if (type == PKT_MKFILE_REQ) {
+
+                MkFileRequest freq;
+                if (recv(client_fd, &freq, sizeof freq, MSG_WAITALL) > 0) {
+
+                    MkFileResponse fres = {
+                        
+                        .type = PKT_MKFILE_RES,
+                        .success = false,
+                    };
+
+                    char path[__FILENAME_LEN_MAX__];
+                    snprintf(path, __FILENAME_LEN_MAX__, "data/remote/%s", freq.name);
+                    
+                    int fd = open(path, O_CREAT | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
+                    if (fd != -1)
+                        close(fd);
+
+                    if (lres.role == ADMIN)
+                        fres.success = true;
+
+                    else {
+
+                        pthread_mutex_lock(db_lock);
+
+                        forrange(size_t, i, 0, *nusers, 1) {
+
+                            if (!strncmp(users[i].username, lreq.username, __USERNAME_LEN_MAX__)) {
+
+                                bool added = false;
+                                forrange(int, f,  0, __FILES_OWNED_MAX__, 1) {
+
+                                    if (!users[i].files[f][0] || !strncmp(users[i].files[f], freq.name, __FILENAME_LEN_MAX__)) {
+
+                                        strncpy(users[i].files[f], freq.name, __FILENAME_LEN_MAX__);
+                                        added = true;
+                                        break;
+                                    }
+                                }
+
+                                if (added) {
+
+                                    flush_users_db();
+                                    fres.success = true;
+
+                                } else
+                                    strcpy(fres.msg, "File limit reached");
+
+                                break;
+                            }
+                        }
+
+                        pthread_mutex_unlock(db_lock);
+                    }
+
+                    send(client_fd, &fres, sizeof fres, 0);
+                }
+
+            } else if (type == PKT_FLINK_REQ) {
+
+                FLinkRequest sreq;
+                if (recv(client_fd, &sreq, sizeof sreq, MSG_WAITALL) > 0) {
+
+                    FLinkResponse sres = {
+
+                        .type = PKT_FLINK_RES,
+                        .success = false,
+                    };
+
+                    pthread_mutex_lock(db_lock);
+
+                    bool found = false;
+                    forrange(size_t, i, 0, *nusers, 1) {
+
+                        if (!strncmp(users[i].username, sreq.username, __USERNAME_LEN_MAX__)) {
+
+                            found = true;
+                            bool shared = false;
+
+                            forrange(int, f, 0, __FILES_OWNED_MAX__, 1) {
+
+                                if (!users[i].files[f][0] || !strncmp(users[i].files[f], sreq.filename, __FILENAME_LEN_MAX__)) {
+                                    
+                                    strncpy(users[i].files[f], sreq.filename, __FILENAME_LEN_MAX__);
+                                    shared = true;
+                                    break;
+                                }
+                            }
+
+                            if (shared) {
+
+                                flush_users_db();
+                                sres.success = true;
+
+                            } else
+                                strcpy(sres.msg, "Target user file limit reached");
+
+                            break;
+                        }
+                    }
+
+                    if (!found)
+                        sprintf(sres.msg, "User `%s` not found", sreq.username);
+
+                    pthread_mutex_unlock(db_lock);
+                    send(client_fd, &sres, sizeof sres, 0);
+                }
+
             } else {
 
                 char trash;
@@ -702,7 +808,7 @@ void handle_client_connection(int client_fd) {
                 }
             }
 
-            printf("SERVER: Released all line locks for client [%d] `%s`", holder, lreq.username);
+            printf("SERVER: Released all line locks for client [%d] `%s`\n", holder, lreq.username);
         }
 
     } else

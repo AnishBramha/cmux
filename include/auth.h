@@ -52,6 +52,10 @@ typedef enum {
     PKT_RMUSER_RES,
     PKT_CHPSWD_REQ,
     PKT_CHPSWD_RES,
+    PKT_MKFILE_REQ,
+    PKT_MKFILE_RES,
+    PKT_FLINK_REQ,
+    PKT_FLINK_RES,
     PKT_ERR,
 
 } PacketType;
@@ -251,6 +255,40 @@ typedef struct {
 
 } ChPswdResponse;
 
+
+typedef struct {
+
+    PacketType type;
+    char name[__FILENAME_LEN_MAX__];
+
+} MkFileRequest;
+
+
+typedef struct {
+
+    PacketType type;
+    bool success;
+    char msg[__ERRMSG_LEN_MAX__];
+
+} MkFileResponse;
+
+
+typedef struct {
+    
+    PacketType type;
+    char filename[__FILENAME_LEN_MAX__];
+    char username[__USERNAME_LEN_MAX__];
+
+} FLinkRequest;
+
+
+typedef struct {
+    
+    PacketType type;
+    bool success;
+    char msg[__ERRMSG_LEN_MAX__];
+
+} FLinkResponse;
 
 
 

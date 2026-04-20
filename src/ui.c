@@ -115,10 +115,53 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
     pid_t locked_lines[__FILE_LINES_MAX__] = {0};
     wtimeout(stdscr, 50);
 
+    char mk_buf[__FILENAME_LEN_MAX__] = {NIL};
+    int mk_len = 0;
+    char sh_buf[__USERNAME_LEN_MAX__] = {NIL};
+    int sh_len = 0;
+    int dired_focus = 0;
+    char msg[__ERRMSG_LEN_MAX__] = {NIL};
+    
     int c;
     while ((c = getch()) != CTRL('x')) {
 
         if (c == ERR) {
+
+            if (!in_editor) {
+
+                DirRequest req = {.type = PKT_DIR_REQ};
+                strncpy(req.username, username, __USERNAME_LEN_MAX__);
+                send(server_fd, &req, sizeof req, 0);
+
+                if (recv(server_fd, &dres, sizeof dres, MSG_WAITALL) > 0) {
+
+                    wclear(win_dired);
+                    box(win_dired, 0, 0);
+                    mvwprintw(win_dired, 0, 2, "Dired");
+
+                    int file_y = 2;
+                    forrange(size_t, i, 0, dres.nnodes, 1) {
+
+                        FileNode node = dres.nodes[i];
+                        wmove(win_dired, file_y++, 2);
+
+                        forrange(int, d, 0, node.depth, 1)
+                            wprintw(win_dired, " ");
+                        wprintw(win_dired, (node.type == NODE_DIR ? "v %s" : "  %s"), dres.nodes[i].name);
+                    }
+                }
+            }
+
+            int dy = term_y - 6;
+            mvwprintw(win_dired, dy, 2, "Filename:");
+            mvwprintw(win_dired, dy + 1, 2, "[ %-20s ]", mk_buf);
+            mvwprintw(win_dired, dy + 2, 2, "Share with:");
+            mvwprintw(win_dired, dy + 3, 2, "[ %-20s ]", sh_buf);
+
+            if (msg[0])
+                mvwprintw(win_dired, dy + 4, 2, "%-26s", msg);
+
+            wrefresh(win_dired);
 
             if (in_editor) {
 
@@ -136,27 +179,44 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
 
                     if (sres.success) {
 
+                        forrange(size_t, l, 0, sres.nlines, 1) {
 
-                forrange(size_t, l, 0, sres.nlines, 1) {
+                            locked_lines[l] = sres.lines[l].locked;
+                            
+                            if (sres.lines[l].locked != 0 && sres.lines[l].locked != pid) {
 
-                    locked_lines[l] = sres.lines[l].locked;
-                    
-                    if (sres.lines[l].locked != 0 && sres.lines[l].locked != pid) {
+                                wattron(win_editor, COLOR_PAIR(2));
+                                mvwprintw(win_editor, l + 2, 2, "%2zu ", l + 1, sres.lines[l].text);
+                                wattroff(win_editor, COLOR_PAIR(2));
 
-                        wattron(win_editor, COLOR_PAIR(2));
-                        mvwprintw(win_editor, l + 2, 2, "%2zu ", l + 1, sres.lines[l].text);
-                        wattroff(win_editor, COLOR_PAIR(2));
+                            } else
+                                mvwprintw(win_editor, l + 2, 2, "%2zu ", l + 1, sres.lines[l].text);
 
-                    } else
-                        mvwprintw(win_editor, l + 2, 2, "%2zu ", l + 1, sres.lines[l].text);
+                            wprintw(win_editor, "| %-60s", sres.lines[l].text);
+                        } 
 
-                    wprintw(win_editor, "| %-60s", sres.lines[l].text);
-                } 
                         wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
                         wrefresh(win_editor);
                     }
                 }
             }
+
+            if (dired_focus == 1) {
+
+                wmove(win_dired, dy + 1, mk_len + 4);
+                wrefresh(win_dired);
+
+            } else if (dired_focus == 2) {
+
+                wmove(win_dired, dy + 3, sh_len + 4);
+                wrefresh(win_editor);
+
+            } else if (in_editor) {
+
+                wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+                wrefresh(win_editor);
+            }
+
             continue;
         }
 
@@ -171,50 +231,68 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
 
                 if (event.x < dired_width) {
 
-                    int clicked_idx = event.y - 2;
+                    int dy = term_y - 6;
 
-                    if (clicked_idx >= 0 && clicked_idx < dres.nnodes) {
+                    if (event.y == dy + 1) {
 
-                        if (dres.nodes[clicked_idx].type == NODE_FILE) {
+                        dired_focus = 1;
+                        curs_set(1);
 
-                            FOpenRequest freq = {.type = PKT_FOPEN_REQ};
-                            strncpy(freq.path, dres.nodes[clicked_idx].name, __FILENAME_LEN_MAX__);
-                            send(server_fd, &freq, sizeof freq, 0);
+                    } else if (event.y == dy + 3) {
+                        
+                        dired_focus = 2;
+                        curs_set(1);
 
-                            FOpenResponse fres;
-                            if (recv(server_fd, &fres, sizeof fres, MSG_WAITALL) <= 0)
-                                break;
+                    } else {
 
-                            wclear(win_editor);
-                            box(win_editor, 0, 0);
-                            mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x> | <C-f>]", freq.path);
+                        dired_focus = 0;
+                        curs_set(0);
+                        int clicked_idx = event.y - 2;
 
-                            if (fres.success) {
+                        if (clicked_idx >= 0 && clicked_idx < dres.nnodes) {
 
-                                in_editor = true;
-                                strncpy(current_file, freq.path, __FILENAME_LEN_MAX__);
-                                cursor_y = 0;
-                                cursor_x = 0;
+                            if (dres.nodes[clicked_idx].type == NODE_FILE) {
 
-                                forrange(size_t, l, 0, fres.nlines, 1)
-                                    mvwprintw(win_editor, l + 2, 2, "%2zu | %s", l + 1, fres.lines[l].text);
+                                FOpenRequest freq = {.type = PKT_FOPEN_REQ};
+                                strncpy(freq.path, dres.nodes[clicked_idx].name, __FILENAME_LEN_MAX__);
+                                send(server_fd, &freq, sizeof freq, 0);
 
-                                curs_set(1);
-                                wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+                                FOpenResponse fres;
+                                if (recv(server_fd, &fres, sizeof fres, MSG_WAITALL) <= 0)
+                                    break;
 
-                            } else {
-                                
-                                mvwprintw(win_editor, 2, 2, "Failed to open file");
-                                in_editor = false;
-                                curs_set(0);
+                                wclear(win_editor);
+                                box(win_editor, 0, 0);
+                                mvwprintw(win_editor, 0, 2, "Editor [%s] [<C-x> | <C-f>]", freq.path);
+
+                                if (fres.success) {
+
+                                    in_editor = true;
+                                    strncpy(current_file, freq.path, __FILENAME_LEN_MAX__);
+                                    cursor_y = 0;
+                                    cursor_x = 0;
+
+                                    forrange(size_t, l, 0, fres.nlines, 1)
+                                        mvwprintw(win_editor, l + 2, 2, "%2zu | %s", l + 1, fres.lines[l].text);
+
+                                    curs_set(1);
+                                    wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
+
+                                } else {
+                                    
+                                    mvwprintw(win_editor, 2, 2, "Failed to open file");
+                                    in_editor = false;
+                                    curs_set(0);
+                                }
+
+                                wrefresh(win_editor);
                             }
-
-                            wrefresh(win_editor);
                         }
                     }
 
                 } else if (in_editor) {
 
+                    dired_focus = 0;
                     cursor_y = event.y - 2;
                     cursor_x = event.x - dired_width - line_offt;
 
@@ -229,6 +307,112 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
 
                     wmove(win_editor, cursor_y + 2, cursor_x + line_offt);
                     wrefresh(win_editor);
+                }
+            }
+
+        } else if (dired_focus > 0) {
+
+            if (c == KEY_ENTER || c == '\n' || c == '\r') {
+
+                if (dired_focus == 1 && mk_len > 0) {
+
+                    MkFileRequest mreq = {.type = PKT_MKFILE_REQ};
+                    strncpy(mreq.name, mk_buf, __FILENAME_LEN_MAX__);
+                    send(server_fd, &mreq, sizeof mreq, 0);
+
+                    MkFileResponse mres;
+                    if (recv(server_fd, &mres, sizeof mres, MSG_WAITALL) > 0) {
+
+                        if (mres.success) {
+
+                            sprintf(msg, "File `%s` created", mreq.name);
+
+                            mk_buf[0] = NIL;
+                            mk_len = 0;
+                            dired_focus = 0;
+                            curs_set(0);
+
+                            DirRequest req = {.type = PKT_DIR_REQ};
+                            strncpy(req.username, username, __USERNAME_LEN_MAX__);
+                            send(server_fd, &req, sizeof req, 0);
+
+                            if (recv(server_fd, &dres, sizeof dres, MSG_WAITALL) > 0) {
+
+                                wclear(win_dired);
+                                box(win_dired, 0, 0);
+                                mvwprintw(win_dired, 0, 2, "Dired");
+                                
+                                int file_y = 2;
+                                forrange(size_t, i, 0, dres.nnodes, 1) {
+
+                                    FileNode node = dres.nodes[i];
+                                    wmove(win_dired, file_y++, 2);
+
+                                    forrange(int, d, 0, node.depth, 1)
+                                        wprintw(win_dired, " ");
+                                    
+                                    wprintw(win_dired, (node.type == NODE_DIR ? "v %s" : "  %s"), dres.nodes[i].name);
+                                }
+                            }
+
+                        } else
+                            strncpy(msg, mres.msg, __ERRMSG_LEN_MAX__);
+                    }
+
+                } else if (dired_focus == 2 && sh_len > 0 && mk_len > 0) {
+                    
+                    MkFileRequest mreq = {.type = PKT_MKFILE_REQ};
+                    strncpy(mreq.name, mk_buf, __FILENAME_LEN_MAX__);
+                    send(server_fd, &mreq, sizeof mreq, 0);
+                    
+                    MkFileResponse mres;
+                    if (recv(server_fd, &mres, sizeof mres, MSG_WAITALL) > 0) {
+
+                        FLinkRequest sreq = {.type = PKT_FLINK_REQ};
+                        strncpy(sreq.filename, mk_buf, __FILENAME_LEN_MAX__);
+                        strncpy(sreq.username, sh_buf, __USERNAME_LEN_MAX__);
+                        send(server_fd, &sreq, sizeof sreq, 0);
+
+                        FLinkResponse sres;
+                        if (recv(server_fd, &sres, sizeof sres, MSG_WAITALL) > 0) {
+
+                            if (sres.success) {
+
+                                sprintf(msg, "File `%s` to `%s`", sreq.filename, sreq.username);
+
+                                mk_buf[0] = NIL;
+                                mk_len = 0;
+                                sh_buf[0] = NIL;
+                                sh_len = 0;
+                                dired_focus = 0;
+                                curs_set(0);
+                            
+                            } else
+                                strncpy(msg, sres.msg, __ERRMSG_LEN_MAX__);
+                        }
+                    }
+                }
+
+            } else if (c == KEY_BACKSPACE || c == 127 || c == '\b') {
+
+                if (dired_focus == 1 && mk_len > 0)
+                    mk_buf[--mk_len] = NIL;
+
+                if (dired_focus == 2 && sh_len > 0)
+                    sh_buf[--sh_len] = NIL;
+
+            } else if (isprint(c)) {
+
+                if (dired_focus == 1 && mk_len < 20) {
+
+                    mk_buf[mk_len++] = c;
+                    mk_buf[mk_len] = NIL;
+                }
+                
+                if (dired_focus == 2 && sh_len < 20) {
+
+                    sh_buf[sh_len++] = c;
+                    sh_buf[sh_len] = NIL;
                 }
             }
 
