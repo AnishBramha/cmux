@@ -23,6 +23,8 @@ int main(int argc, char** argv) {
     pid_t clipid;
     Role clirole;
 
+    signal(SIGPIPE, SIG_IGN);
+
     initscr();
     cbreak();
     noecho();

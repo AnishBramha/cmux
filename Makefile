@@ -65,6 +65,10 @@ clear:
 	@echo "Clearing project directory 🗑️"
 	rm -rf $(BUILD_DIR) $(TARGET) $(TARGET_DIR)
 
+.PHONY: docs
+docs:
+	xelatex -output-directory=docs docs/report.tex
+
 -include $(DEPS)
 
 

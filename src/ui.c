@@ -422,7 +422,28 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
                                 sh_len = 0;
                                 dired_focus = 0;
                                 curs_set(0);
-                            
+
+                                DirRequest req = {.type = PKT_DIR_REQ};
+                                strncpy(req.username, username, __USERNAME_LEN_MAX__);
+                                send(server_fd, &req, sizeof req, 0);
+
+                                if (recv(server_fd, &dres, sizeof dres, MSG_WAITALL) > 0) {
+                                    wclear(win_dired);
+                                    box(win_dired, 0, 0);
+                                    mvwprintw(win_dired, 0, 2, "Dired");
+                                    
+                                    int file_y = 2;
+                                    forrange(size_t, i, 0, dres.nnodes, 1) {
+
+                                        FileNode node = dres.nodes[i];
+                                        wmove(win_dired, file_y++, 2);
+
+                                        forrange(int, d, 0, node.depth, 1)
+                                            wprintw(win_dired, " ");
+
+                                        wprintw(win_dired, (node.type == NODE_DIR ? "v %s" : "  %s"), dres.nodes[i].name);
+                                    }
+                                }
                             } else
                                 strncpy(msg, sres.msg, __ERRMSG_LEN_MAX__);
                         }
@@ -536,7 +557,7 @@ int show_homepage(Role role) {
     box(win, 0, 0);
     mvwprintw(win, 2, term_x / 2 - 10, "cmux session");
     mvwprintw(win, 5, term_x / 2 - 10, "[ View Files ]");
-    mvwprintw(win, 7, term_x / 2 - 10, (role == ADMIN ? "[ View Users]" : "[ View Account ]"));
+    mvwprintw(win, 7, term_x / 2 - 10, (role == ADMIN ? "[ View Users ]" : "[ View Account ]"));
     mvwprintw(win, 9, term_x / 2 - 10, "[ Logout ]");
     wrefresh(win);
 
