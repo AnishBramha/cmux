@@ -18,6 +18,9 @@ bin
 *.bin
 *.log
 seed*
+_minted
+*.tex
+*.gz
 .DS_Store
 
 
