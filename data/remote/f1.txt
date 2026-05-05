@@ -1,0 +1,7 @@
+int long short unsigned
+
+float double
+
+char string
+
+some data types

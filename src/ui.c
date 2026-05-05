@@ -96,7 +96,7 @@ void show_dired(int server_fd, const char* username, pid_t pid) {
         forrange(int, d, 0, node.depth, 1)
             wprintw(win_dired, "  ");
 
-        wprintw(win_dired, ((node.type == NODE_DIR) ? "▼ %s" : "  %s"), node.name);
+        wprintw(win_dired, ((node.type == NODE_DIR) ? "v %s" : "  %s"), node.name);
     }
 
     wrefresh(win_dired);

@@ -359,7 +359,7 @@ void handle_client_connection(int client_fd) {
                             fptr->lines[ereq.line].text[ereq.col] = ereq.c;
 
                             if (ereq.col >= len)
-                            fptr->lines[ereq.line].text[ereq.col + 1] = NIL;
+                                fptr->lines[ereq.line].text[ereq.col + 1] = NIL;
                         }
 
                         pthread_mutex_unlock(&fptr->edit_lock);
@@ -561,7 +561,7 @@ void handle_client_connection(int client_fd) {
                     else {
 
                         strcpy(users[*nusers].username, areq.username);
-                        strcpy(users[*nusers].password, "changeme");
+                        strcpy(users[*nusers].password, __DFL_PSWD__);
                         users[(*nusers)++].role = CLIENT;
                         flush_users_db();
 

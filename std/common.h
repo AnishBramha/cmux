@@ -53,12 +53,11 @@
     } while (0)
 
 
-typedef enum {
+enum {
 
     DEBUG,
     CRASH,
-
-} PendingResponse;
+};
 
 #define todo(response, task)                                                                                   \
                                                                                                                     \

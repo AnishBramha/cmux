@@ -7,7 +7,7 @@ static inline char* strrole(Role role) {
 }
 
 
-int run_client_handler(string_view *username, string_view *password, char* errmsg, pid_t* pid, Role* role) {
+int run_client_handler(string_view* username, string_view* password, char* errmsg, pid_t* pid, Role* role) {
 
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (sock_fd < 0) {
